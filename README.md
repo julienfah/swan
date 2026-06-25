@@ -1,0 +1,1 @@
+This is a very first draft to create an automated workflow for wannierisation, based on https://github.com/TMM-TUDA/Automatic-wannier-flow and the afferent paper by Zhang et al., in GPAW + WannierBerri.

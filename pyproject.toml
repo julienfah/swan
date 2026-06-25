@@ -1,0 +1,17 @@
+[project]
+name = "pawan"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ase>=3.29.0",
+    "gpaw>=25.7.0",
+    "irrep>=2.6.3",
+    "numba>=0.65.1",
+    "numpy>=2.4.6",
+    "pyfftw>=0.15.1",
+    "ray>=2.55.1",
+    "spglib>=2.7.0",
+    "wannierberri>=26.4.6",
+]
