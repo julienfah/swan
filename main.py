@@ -1,4 +1,3 @@
-import spglib
 import numpy as np
 from math import ceil
 from ase import Atoms
@@ -6,7 +5,7 @@ from gpaw import GPAW, PW, MixerSum
 from ase.spacegroup import get_spacegroup
 from irrep.spacegroup import SpaceGroup
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
-from wannierberri.w90files import WannierData, Wannier90data, CheckPoint
+from wannierberri.w90files import WannierData
 from wannierberri import System_R,Path,evaluate_k_path
 from matplotlib import pyplot as plt
 from ase.build import bulk
@@ -29,7 +28,7 @@ def compute_kmesh(atoms, emp_param=50):
     #fixed density of k-points
 
     kx,ky,kz = int(emp_param/ax),int(emp_param/ay),int(emp_param/az)
-    #print(f"Initial k-mesh: {kx}x{ky}x{kz}")
+    print(f"Initial k-mesh: {kx}x{ky}x{kz}")
     enforced_multiple = 3 if hexagonal else 2
     kx,ky,kz = ceil(kx / enforced_multiple) * enforced_multiple,ceil(ky / enforced_multiple) * enforced_multiple,ceil(kz / enforced_multiple) * enforced_multiple
     print(f"Computed k-mesh: {kx}x{ky}x{kz}")
@@ -100,11 +99,14 @@ def find_projections():
 
     projs = []
     for l in ls:
-        proj = Projection(position_num=space_group.positions,
-                        orbital = l,
-                        spacegroup=space_group,
-                        rotate_basis=True)
-        projs.append(proj)
+        for pos in space_group.positions:
+            proj = Projection(
+                position_num=[pos],
+                orbital=l,
+                spacegroup=space_group,
+                rotate_basis=True
+            )
+            projs.append(proj)
     
 
     proj_set = ProjectionsSet(projections=projs)
@@ -135,17 +137,27 @@ def find_energy_wdw(ls):
             continue
         emin_list.append(energies[nonzero[0]])
         emax_list.append(energies[nonzero[-1]])
-    print(f"actual min energy: {min(emin_list)} eV, actual max energy: {max(emax_list)} eV")
-    print(energies[0], energies[-1])
-    print(dos_total[energies > e_fermi][:10])
+    #print(f"actual min energy: {min(emin_list)} eV, actual max energy: {max(emax_list)} eV")
+    #print(energies[0], energies[-1])
+    #print(dos_total[energies > e_fermi][:10])
     #optimize the upper limit of the outer window based on the number of wannier functions and the DOS
     l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
     n_wann = sum(2*l_num[l]+1 for l in selected_orbitals) * len(calc.atoms)
     emax = find_emax_from_dos(energies, dos_total, min(emin_list), n_wann, K=1.3)
+    emin = min(emin_list)
     if emax is None:
         raise ValueError("E_max not found — increase nbands in NSCF")
 
-    out_win = (min(emin_list), emax)
+    eigs = np.array([calc.get_eigenvalues(kpt=k) for k in range(len(calc.get_ibz_k_points()))])
+    # ensure at least n_wann bands are fully within the window at every k-point (DOS is averaged over k-points, so it may cause a too small outer window if the bands are very entangled)
+    for k_eigs in eigs:
+        in_window = k_eigs[(k_eigs >= emin) & (k_eigs <= emax)]
+        if len(in_window) < n_wann:
+            emax = max(emax, k_eigs[n_wann])  # extend to include the n_wann-th band
+            print(f"Adjusted emax to {emax} eV to include at least {n_wann} bands at any k-point.")
+
+    out_win = (emin, emax)
+
     print(f"Found the following energy window: {out_win[0]} eV to {out_win[1]} eV")
 
     #frozen window : Zhang suggests from bottom of outer window to 2 eV above Fermi level
@@ -246,6 +258,7 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
     plt.axhspan(ymin=outer_win[0], ymax=outer_win[1], color='gray', alpha=0.1,label="outer window")
     plt.axhspan(ymin=frozen_win[0], ymax=frozen_win[1], color='gray', alpha=0.3,label="frozen window")
     plt.legend(loc='upper right')
+    plt.title(f"{seed} band structure")
     plt.savefig(f"{seed}-wannierized_bands.png", dpi=300)
 def dft_bands(path):
     calc = GPAW(f"{seed}-scf.gpw")
@@ -257,14 +270,15 @@ def dft_bands(path):
         convergence={'bands': 8},
         txt=f"{seed}-bands.txt")
     dft_calc_bands.write(f"{seed}-bands.gpw", mode="all")
+
 def auto_workflow(atoms):
-    #scf(atoms)
+    scf(atoms)
     nscf()
     proj_set,ls = find_projections()
     outer_win,frozen_win = find_energy_wdw(ls)
     wannierize(proj_set,outer_win,frozen_win)
     bands_wannier,wb_path = interpolate_bands()
-    #dft_bands(wb_path.labels)
+    dft_bands(wb_path.labels)
     plot_bands(bands_wannier,wb_path,outer_win,frozen_win)
 if __name__ == "__main__":
     #tests
@@ -274,11 +288,18 @@ if __name__ == "__main__":
     # Define the silicon crystal structure using ASE
     lattice = a*(np.ones ((3,3))-np.eye(3))/2 # each row is a basis vector here, in units of a
     positions = np.array([[0,0,0],[1,1,1]])/4
-    atoms = Atoms("Si2",cell=lattice,pbc=[1,1,1],scaled_positions=positions)
+    Si = Atoms("Si2",cell=lattice,pbc=[1,1,1],scaled_positions=positions)
 
     ### Cu
-    #atoms = bulk('Cu', 'fcc', a=3.61)
+    Cu = bulk('Cu', 'fcc', a=3.61)              # broken, one garbage WF (the s one?)
+    GaAs = bulk('GaAs', 'zincblende', a=5.65)   # good in frozen window
+    MgO = bulk('MgO', 'rocksalt', a=4.21)       # works well
+    NaCl = bulk('NaCl', 'rocksalt', a=5.64)     # good in frozen window, but it does not include the lower conduction band, go to adaptative frozen win?
+    Al   = bulk('Al', 'fcc', a=4.05)            # one of the WF outside the FW is garbage, and even inside it is not perfect
+    Ag   = bulk('Ag', 'fcc', a=4.09)            # full garbage, even the dft looks wrong
+    tungsten = bulk('W', 'bcc', a=3.16)
 
+    atoms = tungsten                               
     ####################################
     global seed
     seed = atoms.get_chemical_formula()
