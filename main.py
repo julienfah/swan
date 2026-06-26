@@ -9,11 +9,16 @@ from wannierberri.w90files import WannierData
 from wannierberri import System_R,Path,evaluate_k_path
 from matplotlib import pyplot as plt
 from ase.build import bulk
+from pathlib import Path as Path_
+from collections import defaultdict
+from ase.io import read
+import spglib
+
 
 #import ray
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
-from utils import get_crystal_system, find_emax_from_dos
+from utils import get_crystal_system, find_emax_from_dos,parse_args
 
 def compute_kmesh(atoms, emp_param=50):
     '''
@@ -49,30 +54,30 @@ def scf(atoms):
         kpts={"size": grid, "gamma": True},
         convergence={"density": 1e-7},
         mixer=MixerSum(0.25, 8, 100),
-        txt=f"{seed}-scf.txt"
+        txt=f"test/{seed}/{seed}-scf.txt"
     )
 
     atoms.calc = calc
 
     atoms.get_potential_energy()
-    calc.write(f"{seed}-scf.gpw", mode="all")
+    calc.write(f"test/{seed}/{seed}-scf.gpw", mode="all")
     
 
-def nscf():
+def nscf(nbands=40):
     '''
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.    
     '''
     print("Running non-self-consistent calculation")
-    calc = GPAW(f'{seed}-scf.gpw', txt=None)
+    calc = GPAW(f'test/{seed}/{seed}-scf.gpw', txt=None)
     nscf_grid = compute_kmesh(calc.atoms,emp_param=45)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
     calc_nscf_irred = calc.fixed_density(
         kpts=irred_k_points,
-        nbands=40,
-        convergence={"bands": 38},
-        txt=f'{seed}-nscf-irred.txt')
-    calc_nscf_irred.write(f'{seed}-nscf-irred.gpw', mode='all')
+        nbands=nbands,
+        convergence={"bands": nbands-2},
+        txt=f'test/{seed}/{seed}-nscf-irred.txt')
+    calc_nscf_irred.write(f'test/{seed}/{seed}-nscf-irred.gpw', mode='all')
 
 
 def find_projections():
@@ -83,7 +88,7 @@ def find_projections():
 
     :return: ProjectionsSet object containing the projections to be used for the wannierization.
     '''
-    calc = GPAW(f'{seed}-scf.gpw', txt=None)
+    calc = GPAW(f'test/{seed}/{seed}-scf.gpw', txt=None)
     setups =calc.setups
     l_conversion = {0:'s',1:'p',2:'d',3:'f'}
     ls = []
@@ -98,10 +103,24 @@ def find_projections():
     space_group = SpaceGroup.from_gpaw(calc)
 
     projs = []
-    for l in ls:
+    '''for l in ls:
         for pos in space_group.positions:
             proj = Projection(
                 position_num=[pos],
+                orbital=l,
+                spacegroup=space_group,
+                rotate_basis=True
+            )
+            projs.append(proj)'''
+    # group atoms by species
+    species_positions = defaultdict(list)
+    for atom, pos in zip(calc.atoms, space_group.positions):
+        species_positions[atom.symbol].append(pos)
+
+    for l in ls:
+        for symbol, positions in species_positions.items():
+            proj = Projection(
+                position_num=positions,
                 orbital=l,
                 spacegroup=space_group,
                 rotate_basis=True
@@ -117,7 +136,7 @@ def find_energy_wdw(ls):
     Find both the outer and frozen energy windows for the Wannierization process, using DOS from the SCF calculation (Zhang method).
     '''
     selected_orbitals = ls
-    calc = GPAW(f'{seed}-nscf-irred.gpw', txt=None)
+    calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
     print(f"Fermi level: {e_fermi} eV")
@@ -174,7 +193,7 @@ def wannierize(proj_set, outer_win, frozen_win):
     '''
     print(frozen_win[0], frozen_win[1], outer_win[0], outer_win[1])
 
-    calc_nscf_irred = GPAW(f'{seed}-nscf-irred.gpw', txt=None)
+    calc_nscf_irred = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
     wandata, bandstructure = WannierData.from_gpaw(
         calculator=calc_nscf_irred,
         spin_channel=0,
@@ -187,7 +206,7 @@ def wannierize(proj_set, outer_win, frozen_win):
                             nbands_upper_skip=2),
         return_bandstructure=True
     )
-    wandata.to_npz(f"{seed}_wannier_data")
+    wandata.to_npz(f"test/{seed}/{seed}_wannier_data")
 
 
     #print("dtype:", wandata.amn.data)
@@ -204,19 +223,17 @@ def wannierize(proj_set, outer_win, frozen_win):
         sitesym=True,
         localise=True,
     )
-    wandata.chk.to_npz(f"{seed}_wannier_data.chk.npz")
+    wandata.chk.to_npz(f"test/{seed}/{seed}_wannier_data.chk.npz")
 def interpolate_bands():
     '''
     Use of the Wannier functions to interpolate the bands.
     '''
-    calc_nscf_irred = GPAW(f'{seed}-nscf-irred.gpw', txt=None)
+    calc_nscf_irred = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
     atoms = calc_nscf_irred.atoms
     path = atoms.cell.bandpath()
     #from wannierberri.symmetry.sawf import SymmetrizerSAWF
 
-    wandata = WannierData.from_npz(seedname=f"{seed}_wannier_data",files=["amn", "mmn", "eig", "chk", "symmetrizer"],ignore_missing_files=False,irreducible=True)
-    #wandata.chk = CheckPoint.from_npz(f"{seed}_wannier_data.chk.npz")
-    #wandata.set_file("symmetrizer", SymmetrizerSAWF.from_npz(f"{seed}_wannier_data.npz.sawf.npz"))
+    wandata = WannierData.from_npz(seedname=f"test/{seed}/{seed}_wannier_data",files=["amn", "mmn", "eig", "chk", "symmetrizer"],ignore_missing_files=False,irreducible=True)
 
     system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
@@ -242,7 +259,7 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
     Plot the interpolated bands and compares with the ones from the DFT calculation.
     '''
     print("Plotting the bands to compare with DFT")
-    bs_dft = GPAW(f"{seed}-bands.gpw").band_structure()
+    bs_dft = GPAW(f"test/{seed}/{seed}-bands.gpw").band_structure()
     #plot comparison
 
     fig,ax = plt.subplots(figsize=(6,6))
@@ -259,50 +276,47 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
     plt.axhspan(ymin=frozen_win[0], ymax=frozen_win[1], color='gray', alpha=0.3,label="frozen window")
     plt.legend(loc='upper right')
     plt.title(f"{seed} band structure")
-    plt.savefig(f"{seed}-wannierized_bands.png", dpi=300)
+    plt.savefig(f"test/{seed}/{seed}-wannierized_bands.png", dpi=300)
 def dft_bands(path):
-    calc = GPAW(f"{seed}-scf.gpw")
+    calc = GPAW(f"test/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
     dft_calc_bands = calc.fixed_density(
         nbands=14,
         symmetry='off',
         kpts={'path': list(path.values()), 'npoints': 100},
         convergence={'bands': 8},
-        txt=f"{seed}-bands.txt")
-    dft_calc_bands.write(f"{seed}-bands.gpw", mode="all")
+        txt=f"test/{seed}/{seed}-bands.txt")
+    dft_calc_bands.write(f"test/{seed}/{seed}-bands.gpw", mode="all")
 
-def auto_workflow(atoms):
-    scf(atoms)
-    nscf()
-    proj_set,ls = find_projections()
-    outer_win,frozen_win = find_energy_wdw(ls)
-    wannierize(proj_set,outer_win,frozen_win)
-    bands_wannier,wb_path = interpolate_bands()
-    dft_bands(wb_path.labels)
-    plot_bands(bands_wannier,wb_path,outer_win,frozen_win)
-if __name__ == "__main__":
-    #tests
-
-    ## Si
-    a = 5.43  # Lattice constant in angstroms
-    # Define the silicon crystal structure using ASE
-    lattice = a*(np.ones ((3,3))-np.eye(3))/2 # each row is a basis vector here, in units of a
-    positions = np.array([[0,0,0],[1,1,1]])/4
-    Si = Atoms("Si2",cell=lattice,pbc=[1,1,1],scaled_positions=positions)
-
-    ### Cu
-    Cu = bulk('Cu', 'fcc', a=3.61)              # broken, one garbage WF (the s one?)
-    GaAs = bulk('GaAs', 'zincblende', a=5.65)   # good in frozen window
-    MgO = bulk('MgO', 'rocksalt', a=4.21)       # works well
-    NaCl = bulk('NaCl', 'rocksalt', a=5.64)     # good in frozen window, but it does not include the lower conduction band, go to adaptative frozen win?
-    Al   = bulk('Al', 'fcc', a=4.05)            # one of the WF outside the FW is garbage, and even inside it is not perfect
-    Ag   = bulk('Ag', 'fcc', a=4.09)            # full garbage, even the dft looks wrong
-    tungsten = bulk('W', 'bcc', a=3.16)
-
-    atoms = tungsten                               
+def auto_workflow(atoms, args):
+    if not args.skip_scf:
+        scf(atoms)
+    if not args.skip_nscf:
+        nscf(nbands=args.nbands)
+    proj_set, ls = find_projections()
+    outer_win, frozen_win = find_energy_wdw(ls)
+    if not args.skip_wannier:
+        wannierize(proj_set, outer_win, frozen_win)
+    bands_wannier, wb_path = interpolate_bands()
+    plot_bands(bands_wannier, wb_path, outer_win, frozen_win)
+if __name__ == "__main__":           
+    ###################################
+    ######## CLI ######################
+    args = parse_args()
+    atoms = read(args.structure)
+    ###################################
+    #standardize the cell
+    cell = spglib.standardize_cell(
+        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers),
+        to_primitive=True,
+        symprec=1e-3
+    )
+    atoms = Atoms(numbers=cell[2], scaled_positions=cell[1], cell=cell[0], pbc=True)
     ####################################
     global seed
-    seed = atoms.get_chemical_formula()
-    auto_workflow(atoms)
 
-    #####check effect of nbr of bands or error param, which one made it broken? adjust nbr of band as a function of nbr of wannier functions?######
+    seed = atoms.get_chemical_formula()
+    Path_(f"test/{seed}").mkdir(parents=True, exist_ok=True)
+
+    auto_workflow(atoms, args)
+    

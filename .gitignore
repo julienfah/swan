@@ -5,12 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
-
+.DS_Store
 # Virtual environments
 .venv
 
-# computation results and outputs
-*.gpw
-*.npz
-*.png
-*.txt
