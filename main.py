@@ -277,13 +277,16 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
     plt.legend(loc='upper right')
     plt.title(f"{seed} band structure")
     plt.savefig(f"test/{seed}/{seed}-wannierized_bands.png", dpi=300)
-def dft_bands(path):
+
+def dft_bands():
     calc = GPAW(f"test/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
+    path = atoms.cell.bandpath(npoints=100)
+    print(path)
     dft_calc_bands = calc.fixed_density(
         nbands=14,
         symmetry='off',
-        kpts={'path': list(path.values()), 'npoints': 100},
+        kpts=path,#{'path': list(path.values()), 'npoints': 100},
         convergence={'bands': 8},
         txt=f"test/{seed}/{seed}-bands.txt")
     dft_calc_bands.write(f"test/{seed}/{seed}-bands.gpw", mode="all")
@@ -298,6 +301,7 @@ def auto_workflow(atoms, args):
     if not args.skip_wannier:
         wannierize(proj_set, outer_win, frozen_win)
     bands_wannier, wb_path = interpolate_bands()
+    dft_bands()
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win)
 if __name__ == "__main__":           
     ###################################
