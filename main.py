@@ -34,7 +34,7 @@ def compute_kmesh(atoms, emp_param=50):
 
     kx,ky,kz = int(emp_param/ax),int(emp_param/ay),int(emp_param/az)
     print(f"Initial k-mesh: {kx}x{ky}x{kz}")
-    enforced_multiple = 3 if hexagonal else 2
+    enforced_multiple = 6 if hexagonal else 4 #should be 8??
     kx,ky,kz = ceil(kx / enforced_multiple) * enforced_multiple,ceil(ky / enforced_multiple) * enforced_multiple,ceil(kz / enforced_multiple) * enforced_multiple
     print(f"Computed k-mesh: {kx}x{ky}x{kz}")
     return kx,ky,kz #should we enforce a certain symmetry in the k-mesh?
@@ -69,7 +69,7 @@ def nscf(nbands=40):
     '''
     print("Running non-self-consistent calculation")
     calc = GPAW(f'test/{seed}/{seed}-scf.gpw', txt=None)
-    nscf_grid = compute_kmesh(calc.atoms,emp_param=45)
+    nscf_grid = compute_kmesh(calc.atoms,emp_param=40)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
     calc_nscf_irred = calc.fixed_density(
@@ -147,15 +147,36 @@ def find_energy_wdw(ls):
             pdos[(iatom, l)] = dos
 
     emin_list, emax_list = [], []
-    threshold = 1e-4  # Threshold for considering a DOS value as nonzero
+    threshold = 1e-6  # Threshold for considering a DOS value as nonzero
+    ef_idx = np.searchsorted(energies, e_fermi)
 
     for (iatom, l), dos in pdos.items():
     
-        nonzero = np.where(dos > threshold)[0]
-        if len(nonzero) == 0:
+        #nonzero = np.where(dos > threshold)[0]#wrong : also takes core bands
+        #if len(nonzero) == 0:
+        #    continue
+        #emin_list.append(energies[nonzero[0]])
+        #emax_list.append(energies[nonzero[-1]])
+
+        # find the first occupied state below E_F
+        below = dos[:ef_idx][::-1]
+        nonzero_below = np.where(below > threshold)[0]
+        if len(nonzero_below) == 0:
             continue
-        emin_list.append(energies[nonzero[0]])
-        emax_list.append(energies[nonzero[-1]])
+        # start scanning from the top of the valence band, not from E_F
+        vbm_idx = ef_idx - nonzero_below[0]
+
+        # now scan downward from VBM to find where DOS goes to zero
+        below_vbm = dos[:vbm_idx][::-1]
+        zero_below = np.where(below_vbm < threshold)[0]
+        emin_ij = energies[vbm_idx - zero_below[0]] if len(zero_below) > 0 else energies[0]
+
+        # scan upward from E_F
+        above = dos[ef_idx:]
+        zero_above = np.where(above < threshold)[0]
+        emax_ij = energies[ef_idx + zero_above[0]] if len(zero_above) > 0 else energies[-1]#correct??
+        emin_list.append(emin_ij)
+        emax_list.append(emax_ij)    
     #print(f"actual min energy: {min(emin_list)} eV, actual max energy: {max(emax_list)} eV")
     #print(energies[0], energies[-1])
     #print(dos_total[energies > e_fermi][:10])
@@ -323,4 +344,3 @@ if __name__ == "__main__":
     Path_(f"test/{seed}").mkdir(parents=True, exist_ok=True)
 
     auto_workflow(atoms, args)
-    

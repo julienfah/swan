@@ -5,10 +5,10 @@
  |__ |  _|___|_____|  25.7.0
  |___|_|             
 
-User:   julfa@tsf-428-wpa-4-211.epfl.ch
-Date:   Thu Jun 25 17:21:13 2026
+User:   julfa@tsf-428-wpa-6-232.epfl.ch
+Date:   Fri Jun 26 12:29:45 2026
 Arch:   arm64
-Pid:    78763
+Pid:    202
 CWD:    /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan
 Python: 3.12.13
 gpaw:   /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan/.venv/lib/python3.12/site-packages/gpaw
@@ -21,7 +21,7 @@ libxc:  2.x.y
 units:  Angstrom and eV
 cores: 1
 OpenMP: False
-OMP_NUM_THREADS: 16
+OMP_NUM_THREADS: 1
 
 Input parameters:
   convergence: {bands: 38}
@@ -171,7 +171,7 @@ Hamiltonian:
 XC parameters: PBE with 2 nearest neighbor stencil
 
 Memory estimate:
-  Process memory now: 259.58 MiB
+  Process memory now: 259.80 MiB
   Calculator: 52.11 MiB
     Density: 1.54 MiB
       Arrays: 0.67 MiB
@@ -232,45 +232,45 @@ Effective grid spacing dv^(1/3) = 0.1718
 
      iter     time        total  log10-change:
                          energy   eigst   dens
-iter:   1 17:21:16    -2.668505   +3.63       c
-iter:   2 17:21:18    -2.668532   +2.02       c
-iter:   3 17:21:21    -2.668532c  +0.93       c
-iter:   4 17:21:23    -2.668532c  +0.22       c
-iter:   5 17:21:25    -2.668532c  -0.34       c
-iter:   6 17:21:27    -2.668532c  -0.83       c
-iter:   7 17:21:29    -2.668532c  -1.26       c
-iter:   8 17:21:31    -2.668532c  -1.67       c
-iter:   9 17:21:34    -2.668532c  -2.02       c
-iter:  10 17:21:36    -2.668532c  -2.27       c
-iter:  11 17:21:38    -2.668532c  -2.53       c
-iter:  12 17:21:40    -2.668532c  -2.75       c
-iter:  13 17:21:42    -2.668532c  -2.94       c
-iter:  14 17:21:45    -2.668532c  -3.07       c
-iter:  15 17:21:47    -2.668532c  -3.25       c
-iter:  16 17:21:49    -2.668532c  -3.51       c
-iter:  17 17:21:51    -2.668532c  -3.65       c
-iter:  18 17:21:53    -2.668532c  -3.88       c
-iter:  19 17:21:55    -2.668532c  -4.05       c
-iter:  20 17:21:58    -2.668532c  -4.27       c
-iter:  21 17:22:00    -2.668532c  -4.45       c
-iter:  22 17:22:02    -2.668532c  -4.59       c
-iter:  23 17:22:04    -2.668532c  -4.83       c
-iter:  24 17:22:06    -2.668532c  -5.07       c
-iter:  25 17:22:08    -2.668532c  -5.19       c
-iter:  26 17:22:11    -2.668532c  -5.31       c
-iter:  27 17:22:13    -2.668532c  -5.59       c
-iter:  28 17:22:15    -2.668532c  -5.67       c
-iter:  29 17:22:17    -2.668532c  -5.78       c
-iter:  30 17:22:19    -2.668532c  -5.97       c
-iter:  31 17:22:21    -2.668532c  -6.17       c
-iter:  32 17:22:24    -2.668532c  -6.37       c
-iter:  33 17:22:26    -2.668532c  -6.57       c
-iter:  34 17:22:28    -2.668532c  -6.73       c
-iter:  35 17:22:30    -2.668532c  -6.82       c
-iter:  36 17:22:32    -2.668532c  -7.03       c
-iter:  37 17:22:35    -2.668532c  -7.18       c
-iter:  38 17:22:37    -2.668532c  -7.32       c
-iter:  39 17:22:39    -2.668532c  -7.53c      c
+iter:   1 12:29:47    -2.668505   +3.63       c
+iter:   2 12:29:50    -2.668532   +2.02       c
+iter:   3 12:29:52    -2.668532c  +0.93       c
+iter:   4 12:29:54    -2.668532c  +0.22       c
+iter:   5 12:29:56    -2.668532c  -0.34       c
+iter:   6 12:29:58    -2.668532c  -0.83       c
+iter:   7 12:30:00    -2.668532c  -1.26       c
+iter:   8 12:30:02    -2.668532c  -1.67       c
+iter:   9 12:30:05    -2.668532c  -2.02       c
+iter:  10 12:30:07    -2.668532c  -2.27       c
+iter:  11 12:30:09    -2.668532c  -2.53       c
+iter:  12 12:30:11    -2.668532c  -2.75       c
+iter:  13 12:30:13    -2.668532c  -2.94       c
+iter:  14 12:30:16    -2.668532c  -3.07       c
+iter:  15 12:30:18    -2.668532c  -3.25       c
+iter:  16 12:30:20    -2.668532c  -3.51       c
+iter:  17 12:30:22    -2.668532c  -3.65       c
+iter:  18 12:30:24    -2.668532c  -3.88       c
+iter:  19 12:30:26    -2.668532c  -4.05       c
+iter:  20 12:30:29    -2.668532c  -4.27       c
+iter:  21 12:30:31    -2.668532c  -4.45       c
+iter:  22 12:30:33    -2.668532c  -4.59       c
+iter:  23 12:30:35    -2.668532c  -4.83       c
+iter:  24 12:30:37    -2.668532c  -5.07       c
+iter:  25 12:30:39    -2.668532c  -5.19       c
+iter:  26 12:30:42    -2.668532c  -5.31       c
+iter:  27 12:30:44    -2.668532c  -5.59       c
+iter:  28 12:30:46    -2.668532c  -5.67       c
+iter:  29 12:30:48    -2.668532c  -5.78       c
+iter:  30 12:30:50    -2.668532c  -5.97       c
+iter:  31 12:30:52    -2.668532c  -6.17       c
+iter:  32 12:30:55    -2.668532c  -6.37       c
+iter:  33 12:30:57    -2.668532c  -6.57       c
+iter:  34 12:30:59    -2.668532c  -6.73       c
+iter:  35 12:31:01    -2.668532c  -6.82       c
+iter:  36 12:31:03    -2.668532c  -7.03       c
+iter:  37 12:31:05    -2.668532c  -7.18       c
+iter:  38 12:31:08    -2.668532c  -7.32       c
+iter:  39 12:31:10    -2.668532c  -7.53c      c
 
 Converged after 39 iterations.
 
@@ -306,11 +306,11 @@ Fermi level: 8.16187
 
 No gap
 No difference between direct/indirect transitions
-Writing to Ag-nscf-irred.gpw (mode='all')
+Writing to test/Ag/Ag-nscf-irred.gpw (mode='all')
 
 Timing:                              incl.     excl.
 -----------------------------------------------------------
-Hamiltonian:                         0.011     0.000   0.0% |
+Hamiltonian:                         0.010     0.000   0.0% |
  Atomic:                             0.008     0.000   0.0% |
   XC Correction:                     0.008     0.008   0.0% |
  Calculate atomic Hamiltonians:      0.000     0.000   0.0% |
@@ -318,46 +318,46 @@ Hamiltonian:                         0.011     0.000   0.0% |
  Initialize Hamiltonian:             0.000     0.000   0.0% |
  Poisson:                            0.000     0.000   0.0% |
  XC 3D grid:                         0.002     0.002   0.0% |
-LCAO initialization:                 0.629     0.021   0.0% |
- LCAO eigensolver:                   0.074     0.000   0.0% |
+LCAO initialization:                 0.626     0.021   0.0% |
+ LCAO eigensolver:                   0.073     0.000   0.0% |
   Calculate projections:             0.000     0.000   0.0% |
   DenseAtomicCorrection:             0.002     0.002   0.0% |
   Distribute overlap matrix:         0.000     0.000   0.0% |
   Orbital Layouts:                   0.003     0.003   0.0% |
-  Potential matrix:                  0.064     0.064   0.1% |
+  Potential matrix:                  0.063     0.063   0.1% |
   Sum over cells:                    0.004     0.004   0.0% |
- LCAO to grid:                       0.460     0.460   0.5% |
- Set positions (LCAO WFS):           0.074     0.013   0.0% |
+ LCAO to grid:                       0.457     0.457   0.5% |
+ Set positions (LCAO WFS):           0.075     0.013   0.0% |
   Basic WFS set positions:           0.000     0.000   0.0% |
   Basis functions set positions:     0.000     0.000   0.0% |
   P tci:                             0.021     0.021   0.0% |
   ST tci:                            0.038     0.038   0.0% |
   mktci:                             0.002     0.002   0.0% |
 PWDescriptor:                        0.005     0.005   0.0% |
-SCF-cycle:                          84.805     0.045   0.1% |
- Davidson:                          84.733     4.662   5.4% |-|
-  Apply H:                          15.950    15.683  18.3% |------|
-   HMM T:                            0.267     0.267   0.3% |
-  Subspace diag:                    18.015     0.051   0.1% |
-   calc_h_matrix:                   16.486     0.503   0.6% |
-    Apply H:                        15.983    15.683  18.3% |------|
-     HMM T:                          0.301     0.301   0.4% |
-   diagonalize:                      0.957     0.957   1.1% |
-   rotate_psi:                       0.521     0.521   0.6% |
-  calc. matrices:                   34.656     2.597   3.0% ||
-   Apply H:                         32.059    31.522  36.8% |--------------|
-    HMM T:                           0.537     0.537   0.6% |
-  diagonalize:                      10.355    10.355  12.1% |----|
-  rotate_psi:                        1.096     1.096   1.3% ||
+SCF-cycle:                          84.570     0.046   0.1% |
+ Davidson:                          84.498     4.678   5.5% |-|
+  Apply H:                          15.867    15.602  18.3% |------|
+   HMM T:                            0.265     0.265   0.3% |
+  Subspace diag:                    17.928     0.047   0.1% |
+   calc_h_matrix:                   16.415     0.501   0.6% |
+    Apply H:                        15.914    15.607  18.3% |------|
+     HMM T:                          0.307     0.307   0.4% |
+   diagonalize:                      0.940     0.940   1.1% |
+   rotate_psi:                       0.525     0.525   0.6% |
+  calc. matrices:                   34.535     2.595   3.0% ||
+   Apply H:                         31.941    31.407  36.8% |--------------|
+    HMM T:                           0.534     0.534   0.6% |
+  diagonalize:                      10.375    10.375  12.2% |----|
+  rotate_psi:                        1.115     1.115   1.3% ||
  Orthonormalize:                     0.026     0.001   0.0% |
   calc_s_matrix:                     0.009     0.009   0.0% |
   inverse-cholesky:                  0.004     0.004   0.0% |
   projections:                       0.005     0.005   0.0% |
   rotate_psi_s:                      0.007     0.007   0.0% |
 Set symmetry:                        0.004     0.004   0.0% |
-Other:                               0.108     0.108   0.1% |
+Other:                               0.093     0.093   0.1% |
 -----------------------------------------------------------
-Total:                                        85.562 100.0%
+Total:                                        85.309 100.0%
 
-Memory usage: 321.28 MiB
-Date: Thu Jun 25 17:22:39 2026
+Memory usage: 320.75 MiB
+Date: Fri Jun 26 12:31:10 2026

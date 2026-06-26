@@ -6,9 +6,9 @@
  |___|_|             
 
 User:   julfa@tsf-428-wpa-6-232.epfl.ch
-Date:   Fri Jun 26 10:26:23 2026
+Date:   Fri Jun 26 16:02:04 2026
 Arch:   arm64
-Pid:    94027
+Pid:    5063
 CWD:    /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan
 Python: 3.12.13
 gpaw:   /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan/.venv/lib/python3.12/site-packages/gpaw
@@ -148,7 +148,7 @@ Hamiltonian:
 XC parameters: PBE with 2 nearest neighbor stencil
 
 Memory estimate:
-  Process memory now: 230.70 MiB
+  Process memory now: 230.88 MiB
   Calculator: 12.57 MiB
     Density: 3.64 MiB
       Arrays: 1.59 MiB
@@ -213,20 +213,20 @@ Effective grid spacing dv^(1/3) = 0.1710
 
      iter     time        total  log10-change:
                          energy   eigst   dens
-iter:   1 10:26:23   -10.874254
-iter:   2 10:26:24   -10.829503   -2.03  -0.80
-iter:   3 10:26:24   -10.800763   -1.91  -0.92
-iter:   4 10:26:24   -10.787495   -3.12  -1.52
-iter:   5 10:26:24   -10.788086   -4.00  -1.66
-iter:   6 10:26:24   -10.788031c  -4.89  -2.70
-iter:   7 10:26:24   -10.788036c  -6.18  -3.12
-iter:   8 10:26:25   -10.788036c  -7.60c -3.83
-iter:   9 10:26:25   -10.788036c  -8.40c -4.18
-iter:  10 10:26:25   -10.788036c  -9.67c -5.22
-iter:  11 10:26:25   -10.788036c -10.67c -5.80
-iter:  12 10:26:25   -10.788036c -11.46c -5.98
-iter:  13 10:26:25   -10.788036c -12.37c -6.88
-iter:  14 10:26:26   -10.788036c -13.05c -7.22c
+iter:   1 16:02:05   -10.874254
+iter:   2 16:02:05   -10.829503   -2.03  -0.80
+iter:   3 16:02:05   -10.800763   -1.91  -0.92
+iter:   4 16:02:05   -10.787495   -3.12  -1.52
+iter:   5 16:02:05   -10.788086   -4.00  -1.66
+iter:   6 16:02:05   -10.788031c  -4.89  -2.70
+iter:   7 16:02:06   -10.788036c  -6.18  -3.12
+iter:   8 16:02:06   -10.788036c  -7.60c -3.83
+iter:   9 16:02:06   -10.788036c  -8.40c -4.18
+iter:  10 16:02:06   -10.788036c  -9.67c -5.22
+iter:  11 16:02:06   -10.788036c -10.67c -5.80
+iter:  12 16:02:06   -10.788036c -11.46c -5.98
+iter:  13 16:02:07   -10.788036c -12.37c -6.88
+iter:  14 16:02:07   -10.788036c -13.05c -7.22c
 
 Converged after 14 iterations.
 
@@ -270,16 +270,16 @@ Writing to test/Si2/Si2-scf.gpw (mode='all')
 
 Timing:                              incl.     excl.
 -----------------------------------------------------------
-Hamiltonian:                         0.016     0.000   0.0% |
- Atomic:                             0.011     0.000   0.0% |
-  XC Correction:                     0.011     0.011   0.0% |
+Hamiltonian:                         0.017     0.000   0.0% |
+ Atomic:                             0.012     0.000   0.0% |
+  XC Correction:                     0.012     0.012   0.0% |
  Calculate atomic Hamiltonians:      0.000     0.000   0.0% |
  Communicate:                        0.000     0.000   0.0% |
  Initialize Hamiltonian:             0.000     0.000   0.0% |
  Poisson:                            0.000     0.000   0.0% |
- XC 3D grid:                         0.004     0.004   0.0% |
+ XC 3D grid:                         0.005     0.005   0.0% |
 LCAO initialization:                 0.100     0.002   0.0% |
- LCAO eigensolver:                   0.025     0.000   0.0% |
+ LCAO eigensolver:                   0.026     0.000   0.0% |
   Calculate projections:             0.000     0.000   0.0% |
   DenseAtomicCorrection:             0.001     0.001   0.0% |
   Distribute overlap matrix:         0.000     0.000   0.0% |
@@ -294,18 +294,18 @@ LCAO initialization:                 0.100     0.002   0.0% |
   ST tci:                            0.010     0.010   0.0% |
   mktci:                             0.001     0.001   0.0% |
 PWDescriptor:                        0.002     0.002   0.0% |
-SCF-cycle:                           2.318     0.009   0.0% |
- Davidson:                           1.884     0.159   0.1% |
+SCF-cycle:                           2.320     0.009   0.0% |
+ Davidson:                           1.887     0.159   0.1% |
   Apply H:                           0.378     0.373   0.1% |
    HMM T:                            0.005     0.005   0.0% |
-  Subspace diag:                     0.428     0.003   0.0% |
-   calc_h_matrix:                    0.397     0.018   0.0% |
-    Apply H:                         0.379     0.373   0.1% |
+  Subspace diag:                     0.429     0.003   0.0% |
+   calc_h_matrix:                    0.398     0.018   0.0% |
+    Apply H:                         0.379     0.374   0.1% |
      HMM T:                          0.006     0.006   0.0% |
    diagonalize:                      0.010     0.010   0.0% |
    rotate_psi:                       0.017     0.017   0.0% |
-  calc. matrices:                    0.856     0.097   0.0% |
-   Apply H:                          0.759     0.749   0.3% |
+  calc. matrices:                    0.858     0.098   0.0% |
+   Apply H:                          0.760     0.749   0.3% |
     HMM T:                           0.011     0.011   0.0% |
   diagonalize:                       0.027     0.027   0.0% |
   rotate_psi:                        0.036     0.036   0.0% |
@@ -317,19 +317,19 @@ SCF-cycle:                           2.318     0.009   0.0% |
    Symmetrize density:               0.007     0.007   0.0% |
  Hamiltonian:                        0.213     0.001   0.0% |
   Atomic:                            0.151     0.001   0.0% |
-   XC Correction:                    0.149     0.149   0.1% |
+   XC Correction:                    0.150     0.150   0.1% |
   Calculate atomic Hamiltonians:     0.003     0.003   0.0% |
   Communicate:                       0.000     0.000   0.0% |
   Poisson:                           0.000     0.000   0.0% |
-  XC 3D grid:                        0.058     0.058   0.0% |
- Orthonormalize:                     0.003     0.000   0.0% |
+  XC 3D grid:                        0.057     0.057   0.0% |
+ Orthonormalize:                     0.004     0.000   0.0% |
   calc_s_matrix:                     0.001     0.001   0.0% |
   inverse-cholesky:                  0.000     0.000   0.0% |
   projections:                       0.001     0.001   0.0% |
   rotate_psi_s:                      0.001     0.001   0.0% |
 Set symmetry:                        0.008     0.008   0.0% |
-Other:                             272.122   272.122  99.1% |---------------------------------------|
+Other:                             285.639   285.639  99.2% |---------------------------------------|
 -----------------------------------------------------------
-Total:                                       274.566 100.0%
+Total:                                       288.086 100.0%
 
-Date: Fri Jun 26 10:30:58 2026
+Date: Fri Jun 26 16:06:52 2026

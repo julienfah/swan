@@ -5,10 +5,10 @@
  |__ |  _|___|_____|  25.7.0
  |___|_|             
 
-User:   julfa@tsf-428-wpa-4-211.epfl.ch
-Date:   Thu Jun 25 17:34:13 2026
+User:   julfa@tsf-428-wpa-6-232.epfl.ch
+Date:   Fri Jun 26 12:43:01 2026
 Arch:   arm64
-Pid:    78763
+Pid:    202
 CWD:    /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan
 Python: 3.12.13
 gpaw:   /Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan/.venv/lib/python3.12/site-packages/gpaw
@@ -21,13 +21,21 @@ libxc:  2.x.y
 units:  Angstrom and eV
 cores: 1
 OpenMP: False
-OMP_NUM_THREADS: 16
+OMP_NUM_THREADS: 1
 
 Input parameters:
   convergence: {bands: 8}
   gpts: [15 15 15]
-  kpts: {npoints: 100,
-         path: ['G', 'X', 'W', 'K', 'G', 'L', 'U', 'W', 'L', 'K']}
+  kpts: {cell: Cell([[0.0, 2.0450000000000004, 2.0450000000000004], [2.0450000000000004, 0.0, 2.0450000000000004], [2.0450000000000004, 2.0450000000000004, 0.0]]),
+         kpts: [[0.         0.         0.        ]
+ [0.03333333 0.         0.03333333]
+ [0.06666667 0.         0.06666667]
+ ...
+ [0.54166667 0.08333333 0.54166667]
+ [0.52083333 0.04166667 0.52083333]
+ [0.5        0.         0.5       ]],
+         labelseq: GXWKGLUWLK,UX,
+         special_points: {'G': array([0., 0., 0.]), 'K': array([0.375, 0.375, 0.75 ]), 'L': array([0.5, 0.5, 0.5]), 'U': array([0.625, 0.25 , 0.625]), 'W': array([0.5 , 0.25, 0.75]), 'X': array([0.5, 0. , 0.5])}}
   mixer: {backend: pulay,
           beta: 0.25,
           method: sum,
@@ -98,11 +106,11 @@ Symmetries present (total): 1
    8:     0.26666667    0.00000000    0.26666667       0.01000000
    9:     0.30000000    0.00000000    0.30000000       0.01000000
           ...
-  99:     0.37500000    0.37500000    0.75000000       0.01000000
+  99:     0.50000000    0.00000000    0.50000000       0.01000000
 
 Wave functions: Plane wave expansion
   Cutoff energy: 500.000 eV
-  Number of coefficients (min, max): 411, 447
+  Number of coefficients (min, max): 411, 445
   Pulay-stress correction: 0.000000 eV/Ang^3 (de/decut=0.000000)
   Using Numpy's FFT
   ScaLapack parameters: grid=1x1, blocksize=None
@@ -138,8 +146,8 @@ Hamiltonian:
 XC parameters: PBE with 2 nearest neighbor stencil
 
 Memory estimate:
-  Process memory now: 1588.92 MiB
-  Calculator: 17.86 MiB
+  Process memory now: 1595.91 MiB
+  Calculator: 17.82 MiB
     Density: 1.54 MiB
       Arrays: 0.67 MiB
       Localized functions: 0.46 MiB
@@ -149,8 +157,8 @@ Memory estimate:
       XC: 0.00 MiB
       Poisson: 0.00 MiB
       vbar: 0.01 MiB
-    Wavefunctions: 15.88 MiB
-      Arrays psit_nG: 9.55 MiB
+    Wavefunctions: 15.83 MiB
+      Arrays psit_nG: 9.51 MiB
       Eigensolver: 0.16 MiB
       Projections: 0.38 MiB
       Projectors: 4.97 MiB
@@ -199,13 +207,13 @@ Effective grid spacing dv^(1/3) = 0.1718
 
      iter     time        total  log10-change:
                          energy   eigst   dens
-iter:   1 17:34:14    -4.467016   -1.00       c
-iter:   2 17:34:15    -4.468140   -2.78       c
-iter:   3 17:34:15    -4.468204c  -4.00       c
-iter:   4 17:34:16    -4.468210c  -5.03       c
-iter:   5 17:34:17    -4.468211c  -6.01       c
-iter:   6 17:34:17    -4.468211c  -6.97       c
-iter:   7 17:34:18    -4.468211c  -7.93c      c
+iter:   1 12:43:02    -4.558322   -0.99       c
+iter:   2 12:43:03    -4.559491   -2.79       c
+iter:   3 12:43:03    -4.559554c  -4.02       c
+iter:   4 12:43:04    -4.559560c  -5.06       c
+iter:   5 12:43:04    -4.559561c  -6.04       c
+iter:   6 12:43:05    -4.559561c  -7.01       c
+iter:   7 12:43:05    -4.559561c  -7.97c      c
 
 Converged after 7 iterations.
 
@@ -213,16 +221,16 @@ Dipole moment: (-0.000000, -0.000000, -0.000000) |e|*Ang
 
 Energy contributions relative to reference atoms: (reference = -144597.826354)
 
-Kinetic:         -2.112260
+Kinetic:         -2.204206
 Potential:       -0.624854
 External:        +0.000000
 XC:              -1.896798
-Entropy (-ST):   -0.007909
+Entropy (-ST):   -0.006718
 Local:           +0.169655
 SIC:             +0.000000
 --------------------------
-Free energy:     -4.472165
-Extrapolated:    -4.468211
+Free energy:     -4.562920
+Extrapolated:    -4.559561
 
 Showing only first 2 kpts
  Kpt  Band  Eigenvalues  Occupancy
@@ -241,11 +249,11 @@ Fermi level: 8.16187
 
 No gap
 No difference between direct/indirect transitions
-Writing to Ag-bands.gpw (mode='all')
+Writing to test/Ag/Ag-bands.gpw (mode='all')
 
 Timing:                              incl.     excl.
 -----------------------------------------------------------
-Hamiltonian:                         0.011     0.000   0.0% |
+Hamiltonian:                         0.010     0.000   0.0% |
  Atomic:                             0.008     0.000   0.0% |
   XC Correction:                     0.008     0.008   0.2% |
  Calculate atomic Hamiltonians:      0.000     0.000   0.0% |
@@ -253,7 +261,7 @@ Hamiltonian:                         0.011     0.000   0.0% |
  Initialize Hamiltonian:             0.000     0.000   0.0% |
  Poisson:                            0.000     0.000   0.0% |
  XC 3D grid:                         0.002     0.002   0.1% |
-LCAO initialization:                 0.455     0.011   0.3% |
+LCAO initialization:                 0.454     0.011   0.3% |
  LCAO eigensolver:                   0.071     0.000   0.0% |
   Calculate projections:             0.000     0.000   0.0% |
   DenseAtomicCorrection:             0.001     0.001   0.0% |
@@ -261,38 +269,38 @@ LCAO initialization:                 0.455     0.011   0.3% |
   Orbital Layouts:                   0.002     0.002   0.1% |
   Potential matrix:                  0.064     0.064   1.6% ||
   Sum over cells:                    0.003     0.003   0.1% |
- LCAO to grid:                       0.317     0.317   7.8% |--|
- Set positions (LCAO WFS):           0.056     0.010   0.2% |
+ LCAO to grid:                       0.318     0.318   7.9% |--|
+ Set positions (LCAO WFS):           0.055     0.009   0.2% |
   Basic WFS set positions:           0.000     0.000   0.0% |
   Basis functions set positions:     0.000     0.000   0.0% |
   P tci:                             0.015     0.015   0.4% |
-  ST tci:                            0.029     0.029   0.7% |
+  ST tci:                            0.028     0.028   0.7% |
   mktci:                             0.002     0.002   0.0% |
 PWDescriptor:                        0.003     0.003   0.1% |
-SCF-cycle:                           3.528     0.006   0.2% |
- Davidson:                           3.511     0.277   6.8% |--|
-  Apply H:                           0.702     0.690  17.0% |------|
+SCF-cycle:                           3.501     0.006   0.2% |
+ Davidson:                           3.485     0.271   6.7% |--|
+  Apply H:                           0.702     0.690  17.2% |------|
    HMM T:                            0.012     0.012   0.3% |
-  Subspace diag:                     0.793     0.006   0.2% |
-   calc_h_matrix:                    0.734     0.031   0.8% |
-    Apply H:                         0.703     0.690  17.0% |------|
+  Subspace diag:                     0.784     0.006   0.2% |
+   calc_h_matrix:                    0.728     0.030   0.7% |
+    Apply H:                         0.698     0.685  17.1% |------|
      HMM T:                          0.013     0.013   0.3% |
-   diagonalize:                      0.026     0.026   0.6% |
-   rotate_psi:                       0.027     0.027   0.7% |
-  calc. matrices:                    1.571     0.167   4.1% |-|
-   Apply H:                          1.404     1.379  34.1% |-------------|
-    HMM T:                           0.025     0.025   0.6% |
-  diagonalize:                       0.114     0.114   2.8% ||
-  rotate_psi:                        0.055     0.055   1.4% ||
+   diagonalize:                      0.024     0.024   0.6% |
+   rotate_psi:                       0.026     0.026   0.7% |
+  calc. matrices:                    1.561     0.163   4.1% |-|
+   Apply H:                          1.398     1.374  34.2% |-------------|
+    HMM T:                           0.024     0.024   0.6% |
+  diagonalize:                       0.112     0.112   2.8% ||
+  rotate_psi:                        0.054     0.054   1.3% ||
  Orthonormalize:                     0.010     0.001   0.0% |
   calc_s_matrix:                     0.003     0.003   0.1% |
   inverse-cholesky:                  0.001     0.001   0.0% |
   projections:                       0.003     0.003   0.1% |
   rotate_psi_s:                      0.002     0.002   0.1% |
 Set symmetry:                        0.000     0.000   0.0% |
-Other:                               0.052     0.052   1.3% ||
+Other:                               0.047     0.047   1.2% |
 -----------------------------------------------------------
-Total:                                         4.049 100.0%
+Total:                                         4.017 100.0%
 
-Memory usage: 1.55 GiB
-Date: Thu Jun 25 17:34:18 2026
+Memory usage: 1.56 GiB
+Date: Fri Jun 26 12:43:05 2026
