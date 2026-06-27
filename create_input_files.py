@@ -4,7 +4,7 @@ from ase.io import write
 import numpy as np
 
 
-Si = bulk('Si', 'diamond', a=5.43)          # works well, but squeering the outer wdw with zhang algo made it slightly worse (see the two png)
+Si = bulk('Si', 'diamond', a=5.43)          # works well, but squeezing the outer wdw with zhang algo made it slightly worse (see the two png)
 Cu = bulk('Cu', 'fcc', a=3.61)              # broken, one garbage WF (the s one?)
 GaAs = bulk('GaAs', 'zincblende', a=5.65)   # good in frozen window
 MgO = bulk('MgO', 'rocksalt', a=4.21)       # works well
@@ -14,7 +14,7 @@ Ag   = bulk('Ag', 'fcc', a=4.09)            # full garbage, even the dft looks w
 tungsten = bulk('W', 'bcc', a=3.16)         # broken, more bands in frozen window than WF -> need to adaptative frozen window?
 Vanadium = bulk('V', 'bcc', a=3.03)         # broken, requires 1/2 translation but real grid from GPAW is odd, should be adaptative?
 Ga = bulk('Ga', 'orthorhombic', a=4.51, b=4.52, c=7.66)
-ke  = bulk('K',  'bcc', a=5.23)             # failes, frozen window is bigger than outer !!! -> need to get the E_min close to Ef, not at the bottom of the bands
+ke  = bulk('K',  'bcc', a=5.23)             # fails, frozen window is bigger than outer !!! -> need to get the E_min close to Ef, not at the bottom of the bands
 
 
 tests= [Ga,ke]
