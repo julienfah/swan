@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
+# computation results
+*.npz
+*.chk
+*.txt
+*.gpw
