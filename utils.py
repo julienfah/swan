@@ -46,10 +46,6 @@ def parse_args():
         help='Seed name for output files (default: chemical formula)'
     )
     parser.add_argument(
-        '--emp-param', type=float, default=50,
-        help='Empirical k-mesh density parameter (default: 50)'
-    )
-    parser.add_argument(
         '--ecut', type=float, default=500,
         help='Plane-wave energy cutoff in eV (default: 500)'
     )
@@ -73,4 +69,10 @@ def parse_args():
         '--skip-wannier', action='store_true',
         help='Skip Wannierization if .npz files already exist'
     )
+    parser.add_argument(
+        '--output-dir', default='test',
+        help='Directory for output files (default: test)'
+    )
+
+
     return parser.parse_args()

@@ -6,6 +6,7 @@ from ase.spacegroup import get_spacegroup
 from irrep.spacegroup import SpaceGroup
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from wannierberri.w90files import WannierData
+from wannierberri.grid.grid import determineNK
 from wannierberri import System_R,Path,evaluate_k_path
 from matplotlib import pyplot as plt
 from ase.build import bulk
@@ -13,6 +14,10 @@ from pathlib import Path as Path_
 from collections import defaultdict
 from ase.io import read
 import spglib
+from wannierberri.symmetry.point_symmetry import PointGroup
+from wannierberri.symmetry.wyckoff_position import split_into_orbits
+
+
 
 
 #import ray
@@ -20,6 +25,17 @@ import spglib
 
 from utils import get_crystal_system, find_emax_from_dos,parse_args
 
+
+def compute_nscf_kmesh(atoms):## correct??
+    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    periodic = np.array(atoms.pbc)
+    NKdiv, NKFFT = determineNK(
+        periodic=periodic,
+        NKdiv=None, NKFFT=1, NK=12,
+        NKFFT_recommended =1,
+        pointgroup=pg
+    )
+    return tuple(NKdiv * NKFFT)
 def compute_kmesh(atoms, emp_param=50):
     '''
     Compute the k-point mesh based on the cell parameters of the given atoms, fixing a certain density of k-points in reciprocal space.
@@ -37,19 +53,21 @@ def compute_kmesh(atoms, emp_param=50):
     enforced_multiple = 6 if hexagonal else 4 #should be 8??
     kx,ky,kz = ceil(kx / enforced_multiple) * enforced_multiple,ceil(ky / enforced_multiple) * enforced_multiple,ceil(kz / enforced_multiple) * enforced_multiple
     print(f"Computed k-mesh: {kx}x{ky}x{kz}")
+    print(f"output of WB function:")
     return kx,ky,kz #should we enforce a certain symmetry in the k-mesh?
 
-def scf(atoms):
+def scf(atoms,ecut,seed):
     '''
     Perform self-consistent field calculation for the given atoms. 
 
     :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
+    :param seed: Seed name for output files.
     '''
     print("Running self-consistent calculation")
     kx,ky,kz = compute_kmesh(atoms,emp_param=30)
     grid = [kx,ky,kz]
     calc = GPAW(
-        mode=PW(500), 
+        mode=PW(ecut), 
         xc="PBE",
         kpts={"size": grid, "gamma": True},
         convergence={"density": 1e-7},
@@ -63,7 +81,7 @@ def scf(atoms):
     calc.write(f"test/{seed}/{seed}-scf.gpw", mode="all")
     
 
-def nscf(nbands=40):
+def nscf(seed,nbands=40):
     '''
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.    
     '''
@@ -80,7 +98,7 @@ def nscf(nbands=40):
     calc_nscf_irred.write(f'test/{seed}/{seed}-nscf-irred.gpw', mode='all')
 
 
-def find_projections():
+def find_projections(seed):
     '''
     First step to find the projections, using the occupied valence orbitals of the atoms in the system. 
 
@@ -93,9 +111,9 @@ def find_projections():
     l_conversion = {0:'s',1:'p',2:'d',3:'f'}
     ls = []
     for setup in setups:
-        occupied = [l for n, l, f in zip(setup.n_j, setup.l_j, setup.f_j) if f > 0]#add if occupied and not already in the list
-        ls.extend([l_conversion[l] for l in occupied])
-    #remove duplicates
+        occupied = [(n,l) for n, l, f in zip(setup.n_j, setup.l_j, setup.f_j) if f > 0]#add if occupied and not already in the list
+        ls.extend([(n,l_conversion[l]) for n,l in occupied])
+    #remove duplicates -- we keep track of (n,l) for the case where e.g. both 3s and 4s are occupied -> need to have 2 s orbitals
     ls = list(dict.fromkeys(ls))
     print(f"Found the following valence orbitals: {ls}")
     
@@ -103,46 +121,42 @@ def find_projections():
     space_group = SpaceGroup.from_gpaw(calc)
 
     projs = []
-    '''for l in ls:
-        for pos in space_group.positions:
-            proj = Projection(
-                position_num=[pos],
-                orbital=l,
-                spacegroup=space_group,
-                rotate_basis=True
-            )
-            projs.append(proj)'''
     # group atoms by species
     species_positions = defaultdict(list)
     for atom, pos in zip(calc.atoms, space_group.positions):
         species_positions[atom.symbol].append(pos)
 
-    for l in ls:
+    for _,l in ls:
         for symbol, positions in species_positions.items():
-            proj = Projection(
-                position_num=positions,
-                orbital=l,
-                spacegroup=space_group,
-                rotate_basis=True
-            )
-            projs.append(proj)
+            # split this species' positions into symmetry orbits
+            orbits_ind = split_into_orbits(positions, space_group)
+            for orbit_indices in orbits_ind:
+                orbit_positions = [positions[i] for i in orbit_indices]
+                proj = Projection(
+                    position_num=orbit_positions,
+                    orbital=l,
+                    spacegroup=space_group,
+                    rotate_basis=True
+                )
+                projs.append(proj)
     
 
     proj_set = ProjectionsSet(projections=projs)
     return proj_set,ls
 
-def find_energy_wdw(ls):
+def find_energy_wdw(ls,K, seed):
     '''
     Find both the outer and frozen energy windows for the Wannierization process, using DOS from the SCF calculation (Zhang method).
     '''
-    selected_orbitals = ls
+    selected_orbitals = ls  #(n,l) pairs
+    unique_ls = list(set(l for _,l in selected_orbitals))
     calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
     print(f"Fermi level: {e_fermi} eV")
     pdos={}
     for iatom in range(len(calc.atoms)):
-        for l in selected_orbitals:  # s, p, d
+        for l in unique_ls:  # s, p, d
             e, dos = calc.get_orbital_ldos(a=iatom, angular=l, npts=1001, width=0.05)
             pdos[(iatom, l)] = dos
 
@@ -182,8 +196,8 @@ def find_energy_wdw(ls):
     #print(dos_total[energies > e_fermi][:10])
     #optimize the upper limit of the outer window based on the number of wannier functions and the DOS
     l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
-    n_wann = sum(2*l_num[l]+1 for l in selected_orbitals) * len(calc.atoms)
-    emax = find_emax_from_dos(energies, dos_total, min(emin_list), n_wann, K=1.3)
+    n_wann = sum(2*l_num[l]+1 for _,l in selected_orbitals) * len(calc.atoms)
+    emax = find_emax_from_dos(energies, dos_total, min(emin_list), n_wann, K=K)
     emin = min(emin_list)
     if emax is None:
         raise ValueError("E_max not found — increase nbands in NSCF")
@@ -204,7 +218,7 @@ def find_energy_wdw(ls):
     frozen_win = (out_win[0], e_fermi +2)
     return out_win,frozen_win #outer and frozen window    
 
-def wannierize(proj_set, outer_win, frozen_win):
+def wannierize(proj_set, outer_win, frozen_win, seed):
     '''
     Proper wannierization of the system, using the previously determined parameters.
 
@@ -245,7 +259,7 @@ def wannierize(proj_set, outer_win, frozen_win):
         localise=True,
     )
     wandata.chk.to_npz(f"test/{seed}/{seed}_wannier_data.chk.npz")
-def interpolate_bands():
+def interpolate_bands(seed):
     '''
     Use of the Wannier functions to interpolate the bands.
     '''
@@ -275,7 +289,7 @@ def interpolate_bands():
 
 
 
-def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
+def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed):
     '''
     Plot the interpolated bands and compares with the ones from the DFT calculation.
     '''
@@ -299,7 +313,7 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win):
     plt.title(f"{seed} band structure")
     plt.savefig(f"test/{seed}/{seed}-wannierized_bands.png", dpi=300)
 
-def dft_bands():
+def dft_bands(seed):
     calc = GPAW(f"test/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
     path = atoms.cell.bandpath(npoints=100)
@@ -312,18 +326,18 @@ def dft_bands():
         txt=f"test/{seed}/{seed}-bands.txt")
     dft_calc_bands.write(f"test/{seed}/{seed}-bands.gpw", mode="all")
 
-def auto_workflow(atoms, args):
+def auto_workflow(atoms, args,seed):
     if not args.skip_scf:
-        scf(atoms)
+        scf(atoms,ecut=args.ecut,seed=seed)
     if not args.skip_nscf:
-        nscf(nbands=args.nbands)
-    proj_set, ls = find_projections()
-    outer_win, frozen_win = find_energy_wdw(ls)
+        nscf(nbands=args.nbands,seed=seed)
+    proj_set, ls = find_projections(seed=seed)
+    outer_win, frozen_win = find_energy_wdw(ls,K=args.K,seed=seed)
     if not args.skip_wannier:
-        wannierize(proj_set, outer_win, frozen_win)
-    bands_wannier, wb_path = interpolate_bands()
-    dft_bands()
-    plot_bands(bands_wannier, wb_path, outer_win, frozen_win)
+        wannierize(proj_set, outer_win, frozen_win,seed=seed)
+    bands_wannier, wb_path = interpolate_bands(seed=seed)
+    dft_bands(seed=seed)
+    plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed)
 if __name__ == "__main__":           
     ###################################
     ######## CLI ######################
@@ -338,9 +352,9 @@ if __name__ == "__main__":
     )
     atoms = Atoms(numbers=cell[2], scaled_positions=cell[1], cell=cell[0], pbc=True)
     ####################################
-    global seed
 
-    seed = atoms.get_chemical_formula()
-    Path_(f"test/{seed}").mkdir(parents=True, exist_ok=True)
+    seed = args.seed if args.seed is not None else atoms.get_chemical_formula()
 
-    auto_workflow(atoms, args)
+    (Path_(args.output_dir)/Path_(f"{seed}")).mkdir(parents=True, exist_ok=True)
+
+    auto_workflow(atoms, args,seed)

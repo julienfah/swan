@@ -14,3 +14,7 @@ wheels/
 *.chk
 *.txt
 *.gpw
+
+#log files
+*.log
+logs/
