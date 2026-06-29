@@ -30,9 +30,6 @@ def find_emax_from_dos(energies, dos_total, emin, n_wann, K=1.2):
     print(f"Cumulative: {cumulative}")
     return None  # need more bands
 
-
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Automatic Wannier function pipeline for a given crystal structure.'
@@ -46,89 +43,88 @@ def parse_args():
         help='Seed name for output files (default: chemical formula)'
     )
     parser.add_argument(
-        '--ecut', type=float, default=500,
+        '--ecut', type=float, default=None,
         help='Plane-wave energy cutoff in eV (default: 500)'
     )
     parser.add_argument(
-        '--nbands', type=int, default=40,
+        '--nbands', type=int, default=None,
         help='Number of bands for NSCF calculation (default: 40)'
     )
     parser.add_argument(
-        '--unconverged-bands', type=int, default=2,
+        '--unconverged-bands', type=int, default=None, dest="unconverged_bands",
         help='Number of unconverged bands for NSCF calculation (default: 2)'
     )
     parser.add_argument(
-        '--dft-plot-nbands', type=int, default=14,
+        '--dft-plot-nbands', type=int, default=None, dest="dft_plot_nbands",
         help='Number of bands to plot for DFT band structure (default: 14)'
     )
     parser.add_argument(
-        '--K', type=float, default=1.2,
-        help='DOS integration factor for outer window (default: 1.3)'
+        '--K', type=float, default=None,
+        help='DOS integration factor for outer window (default: 1.2)'
     )
     parser.add_argument(
-        '--npoints', type=int, default=200,
+        '--npoints', type=int, default=None,
         help='Number of points for band interpolation (default: 200)'
     )
     parser.add_argument(
-        '--density-conv-scf', type=float, default=1e-7,
+        '--density-conv-scf', type=float, default=None, dest="density_conv_scf",
         help='Density convergence criterion for SCF (default: 1e-7)'
     )
     parser.add_argument(
-        '--num-iter', type=int, default=100,
+        '--num-iter', type=int, default=None, dest="num_iter",
         help='Maximum number of iterations for Wannierization (default: 100)'
     )
     parser.add_argument(
-        '--w-conv-tol', type=float, default=1e-8,
+        '--w-conv-tol', type=float, default=None, dest="w_conv_tol",
         help='Convergence tolerance for Wannierization (default: 1e-8)'
     )
     parser.add_argument(
-        '--no-sitesym', action='store_true',
+        '--no-sitesym', action='store_true', dest="no_sitesym",
         help='Do not use site symmetry during Wannierization'
     )
     parser.add_argument(
-        '--no-localise', action='store_true',
+        '--no-localise', action='store_true', dest="no_localise",
         help='Do not localise Wannier functions after Wannierization'
     )
     parser.add_argument(
-        '--spin-channel', type=int, default=0,
+        '--spin-channel', type=int, default=None, dest="spin_channel",
         help='Spin channel for Wannierization (default: 0)'
     )
     parser.add_argument(
-        '--error-threshold', type=float, default=0.1,
+        '--error-threshold', type=float, default=None, dest="error_threshold",
         help='Error threshold for unitary matrix check (default: 0.1)'
     )
     parser.add_argument(
-        '--warning-threshold', type=float, default=0.01,
+        '--warning-threshold', type=float, default=None, dest="warning_threshold",
         help='Warning threshold for unitary matrix check (default: 0.01)'
     )
     parser.add_argument(
-        '--print-progress-every', type=int, default=20,
+        '--print-progress-every', type=int, default=None, dest="print_progress_every",
         help='Print progress every N iterations during Wannierization (default: 20)'
     )
     parser.add_argument(
-        '--npts-dos', type=int, default=1001,
+        '--npts-dos', type=int, default=None, dest="npts_dos",
         help='Number of points for DOS calculation (default: 1001)'
     )
     parser.add_argument(
-        '--dos-width', type=float, default=0.05,
+        '--dos-width', type=float, default=None, dest="dos_width",
         help='Width of Gaussian smearing for DOS calculation in eV (default: 0.05)'
     )
     parser.add_argument(
-        '--skip-scf', action='store_true',
+        '--skip-scf', action='store_true', dest="skip_scf",
         help='Skip SCF if .gpw file already exists'
     )
     parser.add_argument(
-        '--skip-nscf', action='store_true',
+        '--skip-nscf', action='store_true', dest="skip_nscf",
         help='Skip NSCF if .gpw file already exists'
     )
     parser.add_argument(
-        '--skip-wannier', action='store_true',
+        '--skip-wannier', action='store_true', dest="skip_wannier",
         help='Skip Wannierization if .npz files already exist'
     )
     parser.add_argument(
-        '--output-dir', default='test',
+        '--output-dir', default=None, dest="output_dir",
         help='Directory for output files (default: test)'
     )
-
 
     return parser.parse_args()

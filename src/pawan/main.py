@@ -12,23 +12,13 @@ from ase.io import read
 import spglib
 from wannierberri.symmetry.point_symmetry import PointGroup
 
-
-
-
 #import ray
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
 from pawan.utils import get_crystal_system, find_emax_from_dos,parse_args
 from pawan.auto_proj_and_windows import get_proj_set
 
-def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):
-    '''Compute the k-point mesh for the non-self-consistent field (NSCF) calculation based on the crystal system of the given atoms.
-    
-    :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
-    :param NKFFT_: Integer representing the number of k-points in the FFT grid (default: 1).
-    :param NK_: Integer representing the number of k-points in the NSCF calculation (default: 12).
-    :return: Tuple containing the number of k-points in each direction (kx, ky, kz) for the NSCF calculation.
-    '''
+def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
     periodic = np.array(atoms.pbc)
     NKdiv, NKFFT = determineNK(
@@ -45,9 +35,6 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7):
 
     :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
     :param seed: Seed name for output files.
-    :param dir: Directory for output files.
-    :param ecut: Cutoff energy for the plane-wave basis.
-    :param density_conv: Density convergence threshold.
     '''
     print("Running self-consistent calculation")
     kx,ky,kz = compute_nscf_kmesh(atoms)  #compute_kmesh(atoms,emp_param=30)
@@ -71,11 +58,6 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7):
 def nscf(seed,dir,nbands=40,unconverged_bands=2):
     '''
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.    
-    
-    :param seed: Seed name for output files.
-    :param dir: Directory for output files.
-    :param nbands: Number of bands for the NSCF calculation.
-    :param unconverged_bands: Number of unconverged bands for the NSCF
     '''
     print("Running non-self-consistent calculation")
     calc = GPAW(f'{dir}/{seed}/{seed}-scf.gpw', txt=None)
@@ -97,11 +79,6 @@ def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_
     :param proj_set: ProjectionsSet object containing the projections to be used for the wannierization.
     :param outer_win: Tuple containing the outer energy window boundaries.
     :param frozen_win: Tuple containing the frozen energy window boundaries.
-    :param seed: Seed name for output files.
-    :param dir: Directory for output files.
-    :param spin_channel: Spin channel for the wannierization.
-    :param unitary_params: Dictionary containing parameters for the unitary matrix check.
-    :param wannierization_params: Dictionary containing parameters for the wannierization process.
     '''
 
     calc_nscf_irred = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
@@ -116,30 +93,22 @@ def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_
     )
     wandata.to_npz(f"{dir}/{seed}/{seed}_wannier_data")
 
-
-    #print("dtype:", wandata.amn.data)
-    #print("shape:", wandata.amn.data)
-    #print("Cell volume:", calc_nscf_irred.atoms.get_volume())
     wandata.wannierise(
-        froz_min=frozen_win[0],    # below bottom σ band
-        froz_max=frozen_win[1],   # just below Fermi/Dirac point (~-2.5 eV)
+        froz_min=frozen_win[0],    
+        froz_max=frozen_win[1],  
         outer_min=outer_win[0],
-        outer_max=outer_win[1],  # hard cutoff just below vacuum states
+        outer_max=outer_win[1],  
         **wannierization_params
     )
     wandata.chk.to_npz(f"{dir}/{seed}/{seed}_wannier_data.chk.npz")
+
 def interpolate_bands(seed,dir,npoints=200):
     '''
     Use of the Wannier functions to interpolate the bands.
-
-    :param seed: Seed name for output files.
-    :param dir: Directory for output and computation files.
-    :param npoints: Number of points for the band interpolation.
     '''
     calc_nscf_irred = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
     atoms = calc_nscf_irred.atoms
     path = atoms.cell.bandpath()
-    #from wannierberri.symmetry.sawf import SymmetrizerSAWF
 
     wandata = WannierData.from_npz(seedname=f"{dir}/{seed}/{seed}_wannier_data",files=["amn", "mmn", "eig", "chk", "symmetrizer"],ignore_missing_files=False,irreducible=True)
 
@@ -159,19 +128,9 @@ def interpolate_bands(seed,dir,npoints=200):
     return bands_wannier,wb_path
 
 
-
-
-
 def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed,dir):
     '''
     Plot the interpolated bands and compares with the ones from the DFT calculation.
-
-    :param bands_wannier: Band structure obtained from the Wannier interpolation.
-    :param wb_path: Path object representing the k-point path for the band structure.
-    :param outer_win: Tuple containing the outer energy window boundaries.
-    :param frozen_win: Tuple containing the frozen energy window boundaries.
-    :param seed: Seed name for output files.
-    :param dir: Directory for output and computation files.
     '''
     print("Plotting the bands to compare with DFT")
     bs_dft = GPAW(f"{dir}/{seed}/{seed}-bands.gpw").band_structure()
@@ -196,11 +155,6 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed,dir):
 def dft_bands(seed,dir,dft_nbands=14,npoints=100):
     '''
     Compute the band structure directly from the DFT calculation for comparison with the Wannier-interpolated bands.
-    
-    :param seed: Seed name for output files.
-    :param dir: Directory for output and computation files.
-    :param dft_nbands: Number of bands to compute in the DFT calculation.
-    :param npoints: Number of points for the dft band computation.
     '''
     calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
@@ -215,37 +169,46 @@ def dft_bands(seed,dir,dft_nbands=14,npoints=100):
         txt=f"{dir}/{seed}/{seed}-bands.txt")
     dft_calc_bands.write(f"{dir}/{seed}/{seed}-bands.gpw", mode="all")
 
-#default params
-DEFAULT_DFT_PARAMS = {"ecut": 500.0, "density_conv_scf": 1e-7, "nbands": 40, "unconverged_bands": 2,"npoints": 200,"dft_plot_nbands": 14}
-DEFAULT_WINDOW_PARAMS = {"K": 1.2,"dos_kwargs": {'spin': 0, 'npts': 1001, 'width': 0.05}}
-DEFAULT_WANNIER_PARAMS = {"spin_channel":0,"unitary_params":dict(error_threshold=0.1,warning_threshold=0.01,nbands_upper_skip=2),"wannierization_params":dict(num_iter=100,conv_tol=1e-8,print_progress_every=20,sitesym=True,localise=True)}
-DEFAULT_WORKFLOW_FLAGS = {"skip_scf": False, "skip_nscf": False, "skip_wannier": False}
-
-def auto_workflow(atoms, seed, dir, dft_params=None, wannier_params=None, workflow_flags=None, window_params=None):
-    '''
-    Automates the workflow of SCF, NSCF, and Wannierization calculations.
-
-    :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
-    :param seed: Seed name for output files.
-    :param dir: Directory for output files.
-    :param dft_params: Dictionary containing parameters for the DFT calculations.
-    :param wannier_params: Dictionary containing parameters for the Wannierization calculations. Defaults to DEFAULT_WANNIER_PARAMS if not provided.
-    :param workflow_flags: Dictionary containing flags to skip certain parts of the workflow. Defaults to DEFAULT_WORKFLOW_FLAGS if not provided.
-    :param window_params: Dictionary containing parameters for the energy window calculations. Defaults to DEFAULT_WINDOW_PARAMS if not provided.
-    '''
-    dft_params     = {**DEFAULT_DFT_PARAMS,     **(dft_params     or {})}
-    window_params  = {**DEFAULT_WINDOW_PARAMS,          **(window_params or {})}
-    wannier_params = {**DEFAULT_WANNIER_PARAMS, **(wannier_params or {})}
-    workflow_flags = {**DEFAULT_WORKFLOW_FLAGS, **(workflow_flags or {})}
-    if not workflow_flags["skip_scf"]:
-        scf(atoms,ecut=dft_params["ecut"],density_conv=dft_params["density_conv_scf"],seed=seed,dir=dir)
-    if not workflow_flags["skip_nscf"]:
-        nscf(nbands=dft_params["nbands"],unconverged_bands=dft_params["unconverged_bands"],seed=seed,dir=dir)
-    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=window_params["K"],seed=seed,dir=dir,dos_kwargs=window_params["dos_kwargs"])
-    if not workflow_flags["skip_wannier"]:
-        wannierize(proj_set, outer_win, frozen_win,seed=seed,dir=dir,**wannier_params)
-    bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=dft_params["npoints"])
-    dft_bands(seed=seed,dir=dir,npoints=dft_params["npoints"],dft_nbands=dft_params["dft_plot_nbands"])
+def auto_workflow(
+    atoms, 
+    seed, 
+    dir="test", 
+    ecut=500.0, 
+    density_conv_scf=1e-7, 
+    nbands=40, 
+    unconverged_bands=2, 
+    npoints=200, 
+    dft_plot_nbands=14,
+    K=1.2, 
+    spin_channel=0, 
+    npts_dos=1001, 
+    dos_width=0.05,
+    num_iter=100, 
+    w_conv_tol=1e-8, 
+    print_progress_every=20, 
+    no_sitesym=False, 
+    no_localise=False,
+    error_threshold=0.1, 
+    warning_threshold=0.01,
+    skip_scf=False, 
+    skip_nscf=False, 
+    skip_wannier=False
+):
+    if not skip_scf:
+        scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir)
+    if not skip_nscf:
+        nscf(nbands=nbands,unconverged_bands=unconverged_bands,seed=seed,dir=dir)
+        
+    dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
+    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs)
+    
+    if not skip_wannier:
+        unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)
+        wannierization_params = dict(num_iter=num_iter, conv_tol=w_conv_tol, print_progress_every=print_progress_every, sitesym=not no_sitesym, localise=not no_localise)
+        wannierize(proj_set, outer_win, frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
+        
+    bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=npoints)
+    dft_bands(seed=seed,dir=dir,npoints=npoints,dft_nbands=dft_plot_nbands)
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
 
 def main():
@@ -264,34 +227,14 @@ def main():
     ####################################
 
     seed = args.seed if args.seed is not None else atoms.get_chemical_formula()
+    output_directory = args.output_dir if args.output_dir is not None else "test"
 
-    (Path_(args.output_dir)/Path_(f"{seed}")).mkdir(parents=True, exist_ok=True)
+    (Path_(output_directory)/Path_(f"{seed}")).mkdir(parents=True, exist_ok=True)
 
     # build dicts from CLI args
-    auto_workflow(atoms, seed,dir=args.output_dir,
-        dft_params={
-            "ecut": args.ecut,
-            "nbands": args.nbands,
-            "density_conv_scf": args.density_conv_scf,
-            "unconverged_bands": args.unconverged_bands,
-            "npoints": args.npoints,
-            "dft_plot_nbands": args.dft_plot_nbands
-        },
-        window_params={
-            "K": args.K,
-            "dos_kwargs": {'spin': args.spin_channel, 'npts': args.npts_dos, 'width': args.dos_width}
-        }
-        ,
-        wannier_params={
-            "spin_channel": args.spin_channel,
-            "unitary_params": dict(error_threshold=args.error_threshold, warning_threshold=args.warning_threshold, nbands_upper_skip=args.unconverged_bands),
-            "wannierization_params": dict(num_iter=args.num_iter, conv_tol=args.w_conv_tol, print_progress_every=args.print_progress_every, sitesym=not args.no_sitesym, localise=not args.no_localise),
-        },
-        workflow_flags={
-            "skip_scf": args.skip_scf,
-            "skip_nscf": args.skip_nscf,
-            "skip_wannier": args.skip_wannier,
-        }
-    )
+    cli_kwargs = {k: v for k, v in vars(args).items() if v is not None and k not in ['structure', 'seed', 'output_dir']}
+
+    auto_workflow(atoms, seed, dir=output_directory, **cli_kwargs)
+
 if __name__ == "__main__":           
     main()
