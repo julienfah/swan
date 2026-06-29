@@ -62,7 +62,8 @@ def scf(atoms,ecut,seed):
     :param seed: Seed name for output files.
     '''
     print("Running self-consistent calculation")
-    kx,ky,kz = compute_kmesh(atoms,emp_param=30)
+    kx,ky,kz = compute_nscf_kmesh(atoms)  #compute_kmesh(atoms,emp_param=30)
+    print(f"Using k-mesh: {kx}x{ky}x{kz}")
     grid = [kx,ky,kz]
     calc = GPAW(
         mode=PW(ecut), 
@@ -85,7 +86,7 @@ def nscf(seed,nbands=40):
     '''
     print("Running non-self-consistent calculation")
     calc = GPAW(f'test/{seed}/{seed}-scf.gpw', txt=None)
-    nscf_grid = compute_kmesh(calc.atoms,emp_param=40)
+    nscf_grid = compute_nscf_kmesh(calc.atoms)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
     calc_nscf_irred = calc.fixed_density(
