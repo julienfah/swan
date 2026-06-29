@@ -1,0 +1,215 @@
+from gpaw import GPAW
+from ase import Atoms
+from pathlib import Path as Path_
+import numpy as np
+from utils import find_emax_from_dos,parse_args
+from ase.io import read
+import spglib
+from irrep.spacegroup import SpaceGroup
+from collections import defaultdict
+from wannierberri.symmetry.wyckoff_position import split_into_orbits
+from wannierberri.symmetry.projections import Projection, ProjectionsSet
+
+
+
+def get_proj_set(K,seed):
+    calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+    selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,calc=calc)
+
+    space_group = SpaceGroup.from_gpaw(calc)
+
+    projs = []
+    # group atoms by species
+    species_positions = defaultdict(list)
+    for atom, pos in zip(calc.atoms, space_group.positions):
+        species_positions[atom.symbol].append(pos)
+
+    seen = set()
+    for iatom,(n,l) in selected_orbitals:
+        #for symbol, positions in species_positions.items():
+        #    # split this species' positions into symmetry orbits
+        #    orbits_ind = split_into_orbits(positions, space_group)
+        #tab what is below
+        symbol = calc.atoms[iatom].symbol
+        if (symbol, n, l) in seen:
+            continue          # this species+shell already handled via orbit splitting
+        seen.add((symbol, n, l))
+        positions = species_positions[symbol]
+        orbits_ind = split_into_orbits(positions, space_group)
+        for orbit_indices in orbits_ind:
+            orbit_positions = [positions[i] for i in orbit_indices]
+            proj = Projection(
+                position_num=orbit_positions,
+                orbital=l,
+                spacegroup=space_group,
+                rotate_basis=True
+            )
+            projs.append(proj)
+    return ProjectionsSet(projections=projs), outer_win, frozen_win, nwann
+
+def Zhang_projection_method(K=1.2, calc=None):
+    '''
+    Placeholder for Zhang's projection method, which will be implemented in the future.
+    '''
+    if calc is None:
+        calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+    e_fermi = calc.get_fermi_level()
+    energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
+    l_conversion = {0: 's', 1: 'p', 2: 'd', 3: 'f'}
+    l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
+    alpha_initial = {l: (2*l_num[l]+1) / 2 for l in l_conversion.values()}  # (2j+1)/2
+    alpha_max    = {l:  2*l_num[l]+1      for l in l_conversion.values()}  # 2j+1
+
+
+
+    # first estimate of the outer window based on the DOS integration method, to be refined when projections are selected
+    Emin_0, Emax_0,pdos,candidates = initial_DOS_energy_scan(calc=calc) # candidates is a list of unique (iatom, (n,l_str)) 
+    print(f"Initial outer window: {Emin_0} to {Emax_0} eV")
+    print(f"Candidates for projections: {candidates}")
+    # then integrate each orbital's pDOS and compare with occupation tolerance alpha
+    def integrate(dos,emin,emax):
+        mask = (energies >= emin) & (energies <= emax)
+        return np.trapezoid(dos[mask], energies[mask],dx=energies[1]-energies[0])
+    def alpha_selection(alpha):
+        selected_orbitals = []
+        nwann = 0
+        for (iatom, (n, l_str)) in candidates:
+            integrated = integrate(pdos[(iatom, l_str)],Emin_0,Emax_0)
+            if integrated > alpha[l_str]:
+                selected_orbitals.append((iatom,( n, l_str)))
+                nwann += 2*l_num[l_str] + 1
+        return selected_orbitals, nwann
+    #start with loose alpha = (2j+1)/2
+    alpha = alpha_initial
+    alpha_increments = {l: (alpha_max[l]-alpha_initial[l])/10. for l in l_conversion.values()}  # should increment be integer??
+
+    selected_orbitals, nwann = alpha_selection(alpha)
+
+    # now refine the outer window based on the selected orbitals and their pDOS
+    #print(pdos)
+    emax_refined = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
+    steps =0
+    while emax_refined is None and steps < 10:
+        alpha = {l: alpha[l] + alpha_increments[l] for l in l_conversion.values()}
+        selected_orbitals,nwann = alpha_selection(alpha)
+        emax_refined = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
+        steps += 1
+
+    if emax_refined is None:
+        raise ValueError("E_max not found — increase nbands in NSCF")
+    
+    # check that at least nwann orbitals are in the frozen window at any points
+    eigs = np.array([calc.get_eigenvalues(kpt=k) 
+                 for k in range(len(calc.get_ibz_k_points()))])
+    for k_eigs in eigs:
+        in_window = k_eigs[(k_eigs >= Emin_0) & (k_eigs <= emax_refined)]
+        if len(in_window) < nwann:
+            emax_refined = max(emax_refined, k_eigs[nwann-1])  # extend to include the nwann-th band
+            print(f"Adjusted emax to {emax_refined} eV to include at least {nwann} bands at any k-point.")
+
+    out_win = (Emin_0, emax_refined)
+    frozen_win = (Emin_0, e_fermi + 2)
+    print(f"Selected orbitals: {selected_orbitals}")
+    print(f"Outer window: { out_win[0]} to {out_win[1]} eV")
+    print(f"Frozen window: {frozen_win[0]} to {frozen_win[1]} eV")
+
+    ## sanity check: total charge in each orbital should be ~2l+1 for fully occupied
+    #print("Sanity check: total charge in each orbital should be ~2l+1 for fully occupied orbitals")
+    #calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+    #energies, _ = calc.get_dos(spin=0, npts=1001, width=0.05)
+    #de = energies[1] - energies[0]
+    #for iatom in range(len(calc.atoms)):
+    #    for l in ['s', 'p', 'd']:
+    #        _, dos = calc.get_orbital_ldos(a=iatom, angular=l, npts=1001, width=0.05)
+    #        total = np.trapezoid(dos, energies)
+    #        print(f"atom {iatom}, l={l}: total charge = {total:.3f}")
+#
+    return selected_orbitals, out_win, frozen_win,nwann
+        
+
+
+
+def initial_DOS_energy_scan(calc=None):
+    '''
+    Returns (Emin,Emax) determined by taking non-zero DOS values around the Fermi level, and then scanning downwards for Emin and upwards for Emax until the DOS goes to zero.
+    '''
+    if calc is None:
+        calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+    e_fermi = calc.get_fermi_level()
+    energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
+    print(f"Fermi level: {e_fermi} eV")
+
+    l_conversion = {0: 's', 1: 'p', 2: 'd', 3: 'f'}
+
+    ef_idx = np.searchsorted(energies, e_fermi)
+    de = energies[1] - energies[0]
+    #get occupied orbitals
+    setups = calc.setups
+    atoms  = calc.atoms
+
+    # collect all (iatom, (n,l_str)) pairs that have any valence occupation
+    candidates = []
+    for iatom, atom in enumerate(atoms):
+        setup = setups[iatom]
+        occupied_ls = set(
+            (n,l_conversion[l]) for n, l, f in zip(setup.n_j, setup.l_j, setup.f_j) if f > 0
+        )
+        for l_str in occupied_ls:
+            candidates.append((iatom, l_str))
+
+    # now scan the DOS for each (iatom, l_str) pair to find the broad energy windows
+    #get pDOS for each (atom, l-orbital) pair
+    pdos={}
+    for iatom in range(len(calc.atoms)):
+        for i,nl in candidates:  # s, p, d, only l for pdos
+            if iatom == i and (iatom, nl[1]) not in pdos:  # skip if the atom index doesn't match or if we already computed this pDOS
+                e, dos = calc.get_orbital_ldos(a=iatom, angular=nl[1], npts=1001, width=0.05)
+                pdos[(iatom, nl[1])] = dos
+
+    emin_list, emax_list = [], []
+    threshold = 1e-6  # Threshold for considering a DOS value as nonzero
+    ef_idx = np.searchsorted(energies, e_fermi)
+
+    for (iatom, l), dos in pdos.items():
+
+        below = dos[:ef_idx][::-1]
+        nonzero_below = np.where(below > threshold)[0]
+        if len(nonzero_below) == 0:
+            continue
+        # start scanning from the top of the valence band, not from E_F
+        vbm_idx = ef_idx - nonzero_below[0]
+
+        # now scan downward from VBM to find where DOS goes to zero
+        below_vbm = dos[:vbm_idx][::-1]
+        zero_below = np.where(below_vbm < threshold)[0]
+        emin_ij = energies[vbm_idx - zero_below[0]] if len(zero_below) > 0 else energies[0]
+
+        # scan upward from E_F
+        above = dos[ef_idx:]
+        zero_above = np.where(above < threshold)[0]
+        emax_ij = energies[ef_idx + zero_above[0]] if len(zero_above) > 0 else energies[-1]#correct??
+        emin_list.append(emin_ij)
+        emax_list.append(emax_ij)  
+    return min(emin_list), max(emax_list),pdos,candidates
+    
+
+if __name__ == "__main__":           
+    ###################################
+    ######## CLI ######################
+    args = parse_args()
+    atoms = read(args.structure)
+    ###################################
+    #standardize the cell
+    cell = spglib.standardize_cell(
+        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers),
+        to_primitive=True,
+        symprec=1e-3
+    )
+    atoms = Atoms(numbers=cell[2], scaled_positions=cell[1], cell=cell[0], pbc=True)
+    ####################################
+    global seed
+
+    seed = atoms.get_chemical_formula()
+    Path_(f"test/{seed}").mkdir(parents=True, exist_ok=True)
+
+    Zhang_projection_method(K=args.K)

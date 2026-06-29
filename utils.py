@@ -54,7 +54,7 @@ def parse_args():
         help='Number of bands for NSCF calculation (default: 40)'
     )
     parser.add_argument(
-        '--K', type=float, default=1.3,
+        '--K', type=float, default=1.2,
         help='DOS integration factor for outer window (default: 1.3)'
     )
     parser.add_argument(

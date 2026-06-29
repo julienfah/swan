@@ -24,7 +24,7 @@ from wannierberri.symmetry.wyckoff_position import split_into_orbits
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
 from utils import get_crystal_system, find_emax_from_dos,parse_args
-
+from auto_proj_and_windows import get_proj_set
 
 def compute_nscf_kmesh(atoms):## correct??
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
@@ -97,7 +97,7 @@ def nscf(seed,nbands=40):
         txt=f'test/{seed}/{seed}-nscf-irred.txt')
     calc_nscf_irred.write(f'test/{seed}/{seed}-nscf-irred.gpw', mode='all')
 
-
+#not used anymore, replaced by get_proj_set
 def find_projections(seed):
     '''
     First step to find the projections, using the occupied valence orbitals of the atoms in the system. 
@@ -143,7 +143,7 @@ def find_projections(seed):
 
     proj_set = ProjectionsSet(projections=projs)
     return proj_set,ls
-
+#not used anymore, replaced by get_proj_set
 def find_energy_wdw(ls,K, seed):
     '''
     Find both the outer and frozen energy windows for the Wannierization process, using DOS from the SCF calculation (Zhang method).
@@ -331,8 +331,9 @@ def auto_workflow(atoms, args,seed):
         scf(atoms,ecut=args.ecut,seed=seed)
     if not args.skip_nscf:
         nscf(nbands=args.nbands,seed=seed)
-    proj_set, ls = find_projections(seed=seed)
-    outer_win, frozen_win = find_energy_wdw(ls,K=args.K,seed=seed)
+    #proj_set, ls = find_projections(seed=seed)
+    #outer_win, frozen_win = find_energy_wdw(ls,K=args.K,seed=seed)
+    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=args.K,seed=seed)
     if not args.skip_wannier:
         wannierize(proj_set, outer_win, frozen_win,seed=seed)
     bands_wannier, wb_path = interpolate_bands(seed=seed)
