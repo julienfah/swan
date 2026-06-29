@@ -2,7 +2,7 @@ from gpaw import GPAW
 from ase import Atoms
 from pathlib import Path as Path_
 import numpy as np
-from utils import find_emax_from_dos,parse_args
+from pawan.utils import find_emax_from_dos,parse_args
 from ase.io import read
 import spglib
 from irrep.spacegroup import SpaceGroup
@@ -59,7 +59,7 @@ def Zhang_projection_method(K=1.2, calc=None):
     l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
     alpha_initial = {l: (2*l_num[l]+1) / 2 for l in l_conversion.values()}  # (2j+1)/2
     alpha_max    = {l:  2*l_num[l]+1      for l in l_conversion.values()}  # 2j+1
-
+    #wrong normalization of alpha?? 
 
 
     # first estimate of the outer window based on the DOS integration method, to be refined when projections are selected

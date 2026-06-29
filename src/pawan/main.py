@@ -21,8 +21,8 @@ from wannierberri.symmetry.wyckoff_position import split_into_orbits
 #import ray
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
-from utils import get_crystal_system, find_emax_from_dos,parse_args
-from auto_proj_and_windows import get_proj_set
+from pawan.utils import get_crystal_system, find_emax_from_dos,parse_args
+from pawan.auto_proj_and_windows import get_proj_set
 
 def compute_nscf_kmesh(atoms):## correct??
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
@@ -313,6 +313,7 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed):
 def dft_bands(seed):
     calc = GPAW(f"test/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
+    atoms = calc.atoms
     path = atoms.cell.bandpath(npoints=100)
     print(path)
     dft_calc_bands = calc.fixed_density(
@@ -336,7 +337,8 @@ def auto_workflow(atoms, args,seed):
     bands_wannier, wb_path = interpolate_bands(seed=seed)
     dft_bands(seed=seed)
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed)
-if __name__ == "__main__":           
+
+def main():
     ###################################
     ######## CLI ######################
     args = parse_args()
@@ -356,3 +358,5 @@ if __name__ == "__main__":
     (Path_(args.output_dir)/Path_(f"{seed}")).mkdir(parents=True, exist_ok=True)
 
     auto_workflow(atoms, args,seed)
+if __name__ == "__main__":           
+    main()
