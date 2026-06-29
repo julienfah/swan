@@ -12,9 +12,9 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 
 
 
-def get_proj_set(K,seed):
-    calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
-    selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,calc=calc)
+def get_proj_set(K,seed,dir,dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}):
+    calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
+    selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,dir=dir,seed=seed,calc=calc,dos_kwargs=dos_kwargs)
 
     space_group = SpaceGroup.from_gpaw(calc)
 
@@ -26,10 +26,6 @@ def get_proj_set(K,seed):
 
     seen = set()
     for iatom,(n,l) in selected_orbitals:
-        #for symbol, positions in species_positions.items():
-        #    # split this species' positions into symmetry orbits
-        #    orbits_ind = split_into_orbits(positions, space_group)
-        #tab what is below
         symbol = calc.atoms[iatom].symbol
         if (symbol, n, l) in seen:
             continue          # this species+shell already handled via orbit splitting
@@ -47,14 +43,14 @@ def get_proj_set(K,seed):
             projs.append(proj)
     return ProjectionsSet(projections=projs), outer_win, frozen_win, nwann
 
-def Zhang_projection_method(K=1.2, calc=None):
+def Zhang_projection_method(K=1.2, dir=None, seed=None, calc=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}):
     '''
     Placeholder for Zhang's projection method, which will be implemented in the future.
     '''
     if calc is None:
-        calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
     e_fermi = calc.get_fermi_level()
-    energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
+    energies, dos_total = calc.get_dos(**dos_kwargs)
     l_conversion = {0: 's', 1: 'p', 2: 'd', 3: 'f'}
     l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
     alpha_initial = {l: (2*l_num[l]+1) / 2 for l in l_conversion.values()}  # (2j+1)/2
@@ -63,7 +59,7 @@ def Zhang_projection_method(K=1.2, calc=None):
 
 
     # first estimate of the outer window based on the DOS integration method, to be refined when projections are selected
-    Emin_0, Emax_0,pdos,candidates = initial_DOS_energy_scan(calc=calc) # candidates is a list of unique (iatom, (n,l_str)) 
+    Emin_0, Emax_0,pdos,candidates = initial_DOS_energy_scan(calc=calc, dir=dir, seed=seed, dos_kwargs=dos_kwargs) # candidates is a list of unique (iatom, (n,l_str)) 
     print(f"Initial outer window: {Emin_0} to {Emax_0} eV")
     print(f"Candidates for projections: {candidates}")
     # then integrate each orbital's pDOS and compare with occupation tolerance alpha
@@ -153,14 +149,14 @@ def Zhang_projection_method(K=1.2, calc=None):
 
 
 
-def initial_DOS_energy_scan(calc=None):
+def initial_DOS_energy_scan(calc=None, dir=None, seed=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}):
     '''
     Returns (Emin,Emax) determined by taking non-zero DOS values around the Fermi level, and then scanning downwards for Emin and upwards for Emax until the DOS goes to zero.
     '''
     if calc is None:
-        calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
+        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
     e_fermi = calc.get_fermi_level()
-    energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
+    energies, dos_total = calc.get_dos(**dos_kwargs)
     print(f"Fermi level: {e_fermi} eV")
 
     l_conversion = {0: 's', 1: 'p', 2: 'd', 3: 'f'}
