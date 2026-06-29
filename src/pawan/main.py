@@ -34,25 +34,6 @@ def compute_nscf_kmesh(atoms):## correct??
         pointgroup=pg
     )
     return tuple(NKdiv * NKFFT)
-def compute_kmesh(atoms, emp_param=50):
-    '''
-    Compute the k-point mesh based on the cell parameters of the given atoms, fixing a certain density of k-points in reciprocal space.
-    
-    :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
-    :param emp_param: Empirical parameter to determine the density of k-points in reciprocal space. Default is 50 (from Zhang).
-    '''
-    ax,ay,az,alpha,beta,gamma = atoms.cell.cellpar()
-
-    hexagonal = get_crystal_system(atoms) in ('hexagonal', 'trigonal')
-    #fixed density of k-points
-
-    kx,ky,kz = int(emp_param/ax),int(emp_param/ay),int(emp_param/az)
-    print(f"Initial k-mesh: {kx}x{ky}x{kz}")
-    enforced_multiple = 6 if hexagonal else 4 #should be 8??
-    kx,ky,kz = ceil(kx / enforced_multiple) * enforced_multiple,ceil(ky / enforced_multiple) * enforced_multiple,ceil(kz / enforced_multiple) * enforced_multiple
-    print(f"Computed k-mesh: {kx}x{ky}x{kz}")
-    print(f"output of WB function:")
-    return kx,ky,kz #should we enforce a certain symmetry in the k-mesh?
 
 def scf(atoms,ecut,seed):
     '''
@@ -95,127 +76,7 @@ def nscf(seed,nbands=40):
         convergence={"bands": nbands-2},
         txt=f'test/{seed}/{seed}-nscf-irred.txt')
     calc_nscf_irred.write(f'test/{seed}/{seed}-nscf-irred.gpw', mode='all')
-
-#not used anymore, replaced by get_proj_set
-def find_projections(seed):
-    '''
-    First step to find the projections, using the occupied valence orbitals of the atoms in the system. 
-
-    To be replaced by a more involved method, e.g. Zhang's pDOS algorithm.
-
-    :return: ProjectionsSet object containing the projections to be used for the wannierization.
-    '''
-    calc = GPAW(f'test/{seed}/{seed}-scf.gpw', txt=None)
-    setups =calc.setups
-    l_conversion = {0:'s',1:'p',2:'d',3:'f'}
-    ls = []
-    for setup in setups:
-        occupied = [(n,l) for n, l, f in zip(setup.n_j, setup.l_j, setup.f_j) if f > 0]#add if occupied and not already in the list
-        ls.extend([(n,l_conversion[l]) for n,l in occupied])
-    #remove duplicates -- we keep track of (n,l) for the case where e.g. both 3s and 4s are occupied -> need to have 2 s orbitals
-    ls = list(dict.fromkeys(ls))
-    print(f"Found the following valence orbitals: {ls}")
-    
-
-    space_group = SpaceGroup.from_gpaw(calc)
-
-    projs = []
-    # group atoms by species
-    species_positions = defaultdict(list)
-    for atom, pos in zip(calc.atoms, space_group.positions):
-        species_positions[atom.symbol].append(pos)
-
-    for _,l in ls:
-        for symbol, positions in species_positions.items():
-            # split this species' positions into symmetry orbits
-            orbits_ind = split_into_orbits(positions, space_group)
-            for orbit_indices in orbits_ind:
-                orbit_positions = [positions[i] for i in orbit_indices]
-                proj = Projection(
-                    position_num=orbit_positions,
-                    orbital=l,
-                    spacegroup=space_group,
-                    rotate_basis=True
-                )
-                projs.append(proj)
-    
-
-    proj_set = ProjectionsSet(projections=projs)
-    return proj_set,ls
-#not used anymore, replaced by get_proj_set
-def find_energy_wdw(ls,K, seed):
-    '''
-    Find both the outer and frozen energy windows for the Wannierization process, using DOS from the SCF calculation (Zhang method).
-    '''
-    selected_orbitals = ls  #(n,l) pairs
-    unique_ls = list(set(l for _,l in selected_orbitals))
-    calc = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
-    e_fermi = calc.get_fermi_level()
-    energies, dos_total = calc.get_dos(spin=0, npts=1001, width=0.05)
-    print(f"Fermi level: {e_fermi} eV")
-    pdos={}
-    for iatom in range(len(calc.atoms)):
-        for l in unique_ls:  # s, p, d
-            e, dos = calc.get_orbital_ldos(a=iatom, angular=l, npts=1001, width=0.05)
-            pdos[(iatom, l)] = dos
-
-    emin_list, emax_list = [], []
-    threshold = 1e-6  # Threshold for considering a DOS value as nonzero
-    ef_idx = np.searchsorted(energies, e_fermi)
-
-    for (iatom, l), dos in pdos.items():
-    
-        #nonzero = np.where(dos > threshold)[0]#wrong : also takes core bands
-        #if len(nonzero) == 0:
-        #    continue
-        #emin_list.append(energies[nonzero[0]])
-        #emax_list.append(energies[nonzero[-1]])
-
-        # find the first occupied state below E_F
-        below = dos[:ef_idx][::-1]
-        nonzero_below = np.where(below > threshold)[0]
-        if len(nonzero_below) == 0:
-            continue
-        # start scanning from the top of the valence band, not from E_F
-        vbm_idx = ef_idx - nonzero_below[0]
-
-        # now scan downward from VBM to find where DOS goes to zero
-        below_vbm = dos[:vbm_idx][::-1]
-        zero_below = np.where(below_vbm < threshold)[0]
-        emin_ij = energies[vbm_idx - zero_below[0]] if len(zero_below) > 0 else energies[0]
-
-        # scan upward from E_F
-        above = dos[ef_idx:]
-        zero_above = np.where(above < threshold)[0]
-        emax_ij = energies[ef_idx + zero_above[0]] if len(zero_above) > 0 else energies[-1]#correct??
-        emin_list.append(emin_ij)
-        emax_list.append(emax_ij)    
-    #print(f"actual min energy: {min(emin_list)} eV, actual max energy: {max(emax_list)} eV")
-    #print(energies[0], energies[-1])
-    #print(dos_total[energies > e_fermi][:10])
-    #optimize the upper limit of the outer window based on the number of wannier functions and the DOS
-    l_num = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
-    n_wann = sum(2*l_num[l]+1 for _,l in selected_orbitals) * len(calc.atoms)
-    emax = find_emax_from_dos(energies, dos_total, min(emin_list), n_wann, K=K)
-    emin = min(emin_list)
-    if emax is None:
-        raise ValueError("E_max not found — increase nbands in NSCF")
-
-    eigs = np.array([calc.get_eigenvalues(kpt=k) for k in range(len(calc.get_ibz_k_points()))])
-    # ensure at least n_wann bands are fully within the window at every k-point (DOS is averaged over k-points, so it may cause a too small outer window if the bands are very entangled)
-    for k_eigs in eigs:
-        in_window = k_eigs[(k_eigs >= emin) & (k_eigs <= emax)]
-        if len(in_window) < n_wann:
-            emax = max(emax, k_eigs[n_wann])  # extend to include the n_wann-th band
-            print(f"Adjusted emax to {emax} eV to include at least {n_wann} bands at any k-point.")
-
-    out_win = (emin, emax)
-
-    print(f"Found the following energy window: {out_win[0]} eV to {out_win[1]} eV")
-
-    #frozen window : Zhang suggests from bottom of outer window to 2 eV above Fermi level
-    frozen_win = (out_win[0], e_fermi +2)
-    return out_win,frozen_win #outer and frozen window    
+   
 
 def wannierize(proj_set, outer_win, frozen_win, seed):
     '''
@@ -330,8 +191,6 @@ def auto_workflow(atoms, args,seed):
         scf(atoms,ecut=args.ecut,seed=seed)
     if not args.skip_nscf:
         nscf(nbands=args.nbands,seed=seed)
-    #proj_set, ls = find_projections(seed=seed)
-    #outer_win, frozen_win = find_energy_wdw(ls,K=args.K,seed=seed)
     proj_set, outer_win, frozen_win, nwann = get_proj_set(K=args.K,seed=seed)
     if not args.skip_wannier:
         wannierize(proj_set, outer_win, frozen_win,seed=seed)
