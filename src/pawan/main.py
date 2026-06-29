@@ -29,7 +29,7 @@ def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
     )
     return tuple(NKdiv * NKFFT)
 
-def scf(atoms,seed,dir,ecut=500,density_conv=1e-7):
+def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1):
     '''
     Perform self-consistent field calculation for the given atoms. 
 
@@ -37,7 +37,7 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7):
     :param seed: Seed name for output files.
     '''
     print("Running self-consistent calculation")
-    kx,ky,kz = compute_nscf_kmesh(atoms)  #compute_kmesh(atoms,emp_param=30)
+    kx,ky,kz = compute_nscf_kmesh(atoms,NKFFT,NK)  #compute_kmesh(atoms,emp_param=30)
     print(f"Using k-mesh: {kx}x{ky}x{kz}")
     grid = [kx,ky,kz]
     calc = GPAW(
@@ -55,13 +55,13 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7):
     calc.write(f"{dir}/{seed}/{seed}-scf.gpw", mode="all")
     
 
-def nscf(seed,dir,nbands=40,unconverged_bands=2):
+def nscf(seed,dir,nbands=40,unconverged_bands=2,NK=12,NKFFT=1):
     '''
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.    
     '''
     print("Running non-self-consistent calculation")
     calc = GPAW(f'{dir}/{seed}/{seed}-scf.gpw', txt=None)
-    nscf_grid = compute_nscf_kmesh(calc.atoms)
+    nscf_grid = compute_nscf_kmesh(calc.atoms,NKFFT,NK)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
     calc_nscf_irred = calc.fixed_density(
@@ -173,6 +173,8 @@ def auto_workflow(
     atoms, 
     seed, 
     dir="test", 
+    nk=12,
+    nkfft=1,
     ecut=500.0, 
     density_conv_scf=1e-7, 
     nbands=40, 
@@ -195,9 +197,9 @@ def auto_workflow(
     skip_wannier=False
 ):
     if not skip_scf:
-        scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir)
+        scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
     if not skip_nscf:
-        nscf(nbands=nbands,unconverged_bands=unconverged_bands,seed=seed,dir=dir)
+        nscf(nbands=nbands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
         
     dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
     proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs)
@@ -238,3 +240,4 @@ def main():
 
 if __name__ == "__main__":           
     main()
+    

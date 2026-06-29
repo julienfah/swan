@@ -43,6 +43,14 @@ def parse_args():
         help='Seed name for output files (default: chemical formula)'
     )
     parser.add_argument(
+        '--nk', type=int, default=None,
+        help='Number of k-points in each direction for SCF and NSCF calculations'
+    )
+    parser.add_argument(
+        '--nkfft', type=int, default=None,
+        help='Number of k-points in each direction for FFT grid'
+    )
+    parser.add_argument(
         '--ecut', type=float, default=None,
         help='Plane-wave energy cutoff in eV (default: 500)'
     )

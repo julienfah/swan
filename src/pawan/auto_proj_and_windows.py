@@ -93,7 +93,7 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
             emax_refined = max(emax_refined, above_emin[nwann-1])  # set emax to include at least nwann bands
             print(f"Adjusted emax to {emax_refined} eV to include at least {nwann} bands at any k-point.")
 
-    # frozen window selection
+    # ensure that there is less than nwann bands in the frozen window for any k point
     froz_max = e_fermi + 2  # start with a guess
     for k_eigs in eigs:
         in_outer = k_eigs[(k_eigs >= Emin_0) & (k_eigs <= emax_refined)]
