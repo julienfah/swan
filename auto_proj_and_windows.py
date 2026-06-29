@@ -98,17 +98,41 @@ def Zhang_projection_method(K=1.2, calc=None):
     if emax_refined is None:
         raise ValueError("E_max not found — increase nbands in NSCF")
     
-    # check that at least nwann orbitals are in the frozen window at any points
+    # check that at least nwann orbitals are in the outer window at any points
     eigs = np.array([calc.get_eigenvalues(kpt=k) 
                  for k in range(len(calc.get_ibz_k_points()))])
     for k_eigs in eigs:
         in_window = k_eigs[(k_eigs >= Emin_0) & (k_eigs <= emax_refined)]
         if len(in_window) < nwann:
-            emax_refined = max(emax_refined, k_eigs[nwann-1])  # extend to include the nwann-th band
+            # find the nwann-th band above Emin_0
+            above_emin = k_eigs[k_eigs >= Emin_0]
+            emax_refined = max(emax_refined, above_emin[nwann-1])  # extend to include the nwann-th band
             print(f"Adjusted emax to {emax_refined} eV to include at least {nwann} bands at any k-point.")
 
+    # check that the frozen window contains less than nwann orbitals at any k-point
+    froz_max = e_fermi + 2  # initial guess for frozen window upper limit
+    for k_eigs in eigs:#loop over k-points
+        in_outer = k_eigs[(k_eigs >= Emin_0) & (k_eigs <= emax_refined)]#restrict to outer window, frozen window must be inside outer window
+        in_frozen = in_outer[(in_outer >= Emin_0) & (in_outer <= froz_max)]
+        if len(in_frozen) >= nwann:
+            froz_max = min(froz_max, in_frozen[nwann - 1] - 0.01)
+            print(f"Frozen window capped to {froz_max:.3f} eV (nfrozen must be < nwann={nwann})")
+
+
+    # check that at least 1 band exists in the free region (froz_max, emax_refined) at every k-point
+    for k_eigs in eigs:
+        in_free = k_eigs[(k_eigs > froz_max) & (k_eigs <= emax_refined)]
+        if len(in_free) == 0:
+            # extend emax to include the first band above froz_max at this k-point
+            above_frozen = k_eigs[k_eigs > froz_max]
+            if len(above_frozen) > 0:
+                emax_refined = max(emax_refined, above_frozen[0] + 0.01)
+                print(f"Extended emax to {emax_refined:.3f} eV to ensure free bands exist at all k-points.")
+    
     out_win = (Emin_0, emax_refined)
-    frozen_win = (Emin_0, e_fermi + 2)
+    frozen_win = (Emin_0, froz_max)
+    #could do all checks in one kpoints loop, more efficient, but this is clearer for now
+
     print(f"Selected orbitals: {selected_orbitals}")
     print(f"Outer window: { out_win[0]} to {out_win[1]} eV")
     print(f"Frozen window: {frozen_win[0]} to {frozen_win[1]} eV")

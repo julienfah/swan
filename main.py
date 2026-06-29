@@ -2,14 +2,12 @@ import numpy as np
 from math import ceil
 from ase import Atoms
 from gpaw import GPAW, PW, MixerSum
-from ase.spacegroup import get_spacegroup
 from irrep.spacegroup import SpaceGroup
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from wannierberri.w90files import WannierData
 from wannierberri.grid.grid import determineNK
 from wannierberri import System_R,Path,evaluate_k_path
 from matplotlib import pyplot as plt
-from ase.build import bulk
 from pathlib import Path as Path_
 from collections import defaultdict
 from ase.io import read
@@ -226,7 +224,6 @@ def wannierize(proj_set, outer_win, frozen_win, seed):
     :param outer_win: Tuple containing the outer energy window boundaries.
     :param frozen_win: Tuple containing the frozen energy window boundaries.
     '''
-    print(frozen_win[0], frozen_win[1], outer_win[0], outer_win[1])
 
     calc_nscf_irred = GPAW(f'test/{seed}/{seed}-nscf-irred.gpw', txt=None)
     wandata, bandstructure = WannierData.from_gpaw(
