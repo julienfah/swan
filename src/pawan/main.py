@@ -97,7 +97,7 @@ def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_
         froz_min=frozen_win[0],    
         froz_max=frozen_win[1],  
         outer_min=outer_win[0],
-        outer_max=outer_win[1],  
+        outer_max=outer_win[1],# np.inf,#
         **wannierization_params
     )
     wandata.chk.to_npz(f"{dir}/{seed}/{seed}_wannier_data.chk.npz")
@@ -156,6 +156,9 @@ def dft_bands(seed,dir,dft_nbands=14,npoints=100):
     '''
     Compute the band structure directly from the DFT calculation for comparison with the Wannier-interpolated bands.
     '''
+    if Path_(f"{dir}/{seed}/{seed}-bands.gpw").exists():
+        print(f"DFT bands already computed for {seed}. Skipping.")
+        return
     calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
     atoms = calc.atoms
@@ -207,7 +210,7 @@ def auto_workflow(
     if not skip_wannier:
         unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)
         wannierization_params = dict(num_iter=num_iter, conv_tol=w_conv_tol, print_progress_every=print_progress_every, sitesym=not no_sitesym, localise=not no_localise)
-        wannierize(proj_set, outer_win, frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
+        wannierize(proj_set=proj_set, outer_win=outer_win, frozen_win=frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
         
     bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=npoints)
     dft_bands(seed=seed,dir=dir,npoints=npoints,dft_nbands=dft_plot_nbands)
