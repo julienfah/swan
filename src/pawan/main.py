@@ -15,7 +15,7 @@ from wannierberri.symmetry.point_symmetry import PointGroup
 #import ray
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
-from pawan.utils import get_crystal_system, find_emax_from_dos,parse_args
+from pawan.utils import parse_args, adaptative_nscf_nbands
 from pawan.auto_proj_and_windows import get_proj_set
 
 def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
@@ -183,7 +183,8 @@ def auto_workflow(
     ecut=500.0, 
     density_conv_scf=1e-7,
     gap_thres = 0.1,
-    nbands_per_atom=18, 
+    nbands_per_valence_el=4,
+    nbands_per_atom=None, 
     nbands=None, 
     unconverged_bands=2, 
     npoints=200, 
@@ -206,7 +207,7 @@ def auto_workflow(
     if not skip_scf:
         scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
     
-    n_bands = nbands if nbands is not None else nbands_per_atom * len(atoms)
+    n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
         

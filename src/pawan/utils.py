@@ -1,6 +1,7 @@
 import spglib
 import argparse
 from ase.io import read
+from gpaw import GPAW
 
 def get_crystal_system(atoms):
     '''returns the crystal system of the given atoms object based on its space group number.'''
@@ -14,6 +15,31 @@ def get_crystal_system(atoms):
     if 143 <= sg <= 167: return 'trigonal'
     if 168 <= sg <= 194: return 'hexagonal'
     if 195 <= sg <= 230: return 'cubic'
+
+def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n_bands_per_valence_el=4,lower_cap=18,higher_cap=200):
+    if calc is None:
+        calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
+    atoms = calc.atoms
+    if nbands is not None:
+        return nbands
+    if nbands_per_atom is not None:
+        return nbands_per_atom * len(atoms)
+    # if neither is provided, estimate based on number of valence electrons
+    setups =calc.setups
+    tot_val_bands =0#setups.nvalence
+    for i,atom in enumerate(atoms):
+        for n,l,f in zip(setups[i].n_j, setups[i].l_j, setups[i].f_j):
+            if f>0 :tot_val_bands += 2*l+1
+    result = int(tot_val_bands * n_bands_per_valence_el)
+    print(f"Estimated number of bands based on valence electrons: {result}. Will be capped between {lower_cap} and {higher_cap}.")
+    
+    return max(lower_cap, min(higher_cap, result))
+
+
+
+
+
+
 
 def find_emax_from_dos(energies, dos_total, emin, n_wann, K=1.2):
     de = energies[1] - energies[0]
@@ -60,11 +86,15 @@ def parse_args():
     )
     parser.add_argument(
         '--nbands', type=int, default=None,
-        help='Number of bands for NSCF calculation. Overrides --nbdands_per_atom (default: 40)'
+        help='Number of bands for NSCF calculation. Overrides --nbdands_per_atom and --nbands_per_valence_el'
     )
     parser.add_argument(
         '--nbands-per-atom', type=int, default=None, dest="nbands_per_atom",
-        help='Number of bands per atom for NSCF calculation (default: 18)'
+        help='Number of bands per atom for NSCF calculation. Overrides --nbands_per_valence_el'
+    )
+    parser.add_argument(
+        '--nbands-per-valence-el', type=int, default=None, dest="nbands_per_valence_el",
+        help='Number of bands per valence electron for NSCF calculation (default: 5)'
     )
     parser.add_argument(
         '--unconverged-bands', type=int, default=None, dest="unconverged_bands",
