@@ -44,6 +44,7 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1):
         mode=PW(ecut), 
         xc="PBE",
         kpts={"size": grid, "gamma": True},
+        #gpts=(18,18,28),
         convergence={"density": density_conv},
         mixer=MixerSum(0.25, 8, 100),
         txt=f"{dir}/{seed}/{seed}-scf.txt"
@@ -64,6 +65,7 @@ def nscf(seed,dir,nbands=40,unconverged_bands=2,NK=12,NKFFT=1):
     nscf_grid = compute_nscf_kmesh(calc.atoms,NKFFT,NK)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
+
     calc_nscf_irred = calc.fixed_density(
         kpts=irred_k_points,
         nbands=nbands,
@@ -179,8 +181,10 @@ def auto_workflow(
     nk=12,
     nkfft=1,
     ecut=500.0, 
-    density_conv_scf=1e-7, 
-    nbands=40, 
+    density_conv_scf=1e-7,
+    gap_thres = 0.1,
+    nbands_per_atom=18, 
+    nbands=None, 
     unconverged_bands=2, 
     npoints=200, 
     dft_plot_nbands=14,
@@ -202,10 +206,11 @@ def auto_workflow(
     if not skip_scf:
         scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
     if not skip_nscf:
-        nscf(nbands=nbands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
+        n_bands = nbands if nbands is not None else nbands_per_atom * len(atoms)
+        nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
         
     dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
-    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs)
+    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
     
     if not skip_wannier:
         unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)

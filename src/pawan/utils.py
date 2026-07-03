@@ -55,8 +55,16 @@ def parse_args():
         help='Plane-wave energy cutoff in eV (default: 500)'
     )
     parser.add_argument(
+        '--gap-thres', type=float, default=None, dest="gap_thres",
+        help='Minimum size of a gap to be considered as such in the initial window determination. Can be increased to include lower semi-core bands (default: 0.1 eV)'
+    )
+    parser.add_argument(
         '--nbands', type=int, default=None,
-        help='Number of bands for NSCF calculation (default: 40)'
+        help='Number of bands for NSCF calculation. Overrides --nbdands_per_atom (default: 40)'
+    )
+    parser.add_argument(
+        '--nbands-per-atom', type=int, default=None, dest="nbands_per_atom",
+        help='Number of bands per atom for NSCF calculation (default: 18)'
     )
     parser.add_argument(
         '--unconverged-bands', type=int, default=None, dest="unconverged_bands",
@@ -87,11 +95,11 @@ def parse_args():
         help='Convergence tolerance for Wannierization (default: 1e-8)'
     )
     parser.add_argument(
-        '--no-sitesym', action='store_true', dest="no_sitesym",
+        '--no-sitesym', action='store_true', default=None, dest="no_sitesym",
         help='Do not use site symmetry during Wannierization'
     )
     parser.add_argument(
-        '--no-localise', action='store_true', dest="no_localise",
+        '--no-localise', action='store_true', default=None, dest="no_localise",
         help='Do not localise Wannier functions after Wannierization'
     )
     parser.add_argument(
@@ -119,20 +127,21 @@ def parse_args():
         help='Width of Gaussian smearing for DOS calculation in eV (default: 0.05)'
     )
     parser.add_argument(
-        '--skip-scf', action='store_true', dest="skip_scf",
+        '--skip-scf', action='store_true', default=None, dest="skip_scf",
         help='Skip SCF if .gpw file already exists'
     )
     parser.add_argument(
-        '--skip-nscf', action='store_true', dest="skip_nscf",
+        '--skip-nscf', action='store_true', default=None, dest="skip_nscf",
         help='Skip NSCF if .gpw file already exists'
     )
     parser.add_argument(
-        '--skip-wannier', action='store_true', dest="skip_wannier",
+        '--skip-wannier', action='store_true', default=None, dest="skip_wannier",
         help='Skip Wannierization if .npz files already exist'
     )
     parser.add_argument(
         '--output-dir', default=None, dest="output_dir",
         help='Directory for output files (default: test)'
     )
+    
 
     return parser.parse_args()

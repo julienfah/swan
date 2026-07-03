@@ -1,9 +1,9 @@
 data_image0
-_chemical_formula_structural       Al
-_chemical_formula_sum              "Al1"
-_cell_length_a       2.8637824638055176
-_cell_length_b       2.8637824638055176
-_cell_length_c       2.8637824638055176
+_chemical_formula_structural       ZnS
+_chemical_formula_sum              "Zn1 S1"
+_cell_length_a       3.825447686219222
+_cell_length_b       3.825447686219222
+_cell_length_c       3.825447686219222
 _cell_angle_alpha    59.99999999999999
 _cell_angle_beta     59.99999999999999
 _cell_angle_gamma    59.99999999999999
@@ -23,4 +23,5 @@ loop_
   _atom_site_fract_y
   _atom_site_fract_z
   _atom_site_occupancy
-  Al  Al1       1.0  0.0  0.0  0.0  1.0000
+  Zn  Zn1       1.0  0.0  0.0  0.0  1.0000
+  S   S1        1.0  0.25  0.25  0.25  1.0000
