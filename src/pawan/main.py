@@ -113,6 +113,10 @@ def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_
         **wannierization_params
     )
     wandata.chk.to_npz(f"{dir}/{seed}/{seed}_wannier_data.chk.npz")
+    #log spreads
+    with open(f"{dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
+        for center,spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
+            f.write(f"Center: {center}, Spread: {spread}\n")
 
 def interpolate_bands(seed,dir,npoints=200):
     '''
