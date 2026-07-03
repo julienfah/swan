@@ -1,5 +1,4 @@
 import numpy as np
-from math import ceil
 from ase import Atoms
 from gpaw import GPAW, PW, MixerSum
 from irrep.spacegroup import SpaceGroup
@@ -15,7 +14,7 @@ from wannierberri.symmetry.point_symmetry import PointGroup
 #import ray
 #ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
 
-from pawan.utils import parse_args, adaptative_nscf_nbands
+from pawan.utils import parse_args, adaptative_nscf_nbands,adaptative_k_grid,adaptative_g_grid
 from pawan.auto_proj_and_windows import get_proj_set
 
 def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
@@ -44,14 +43,22 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1):
         mode=PW(ecut), 
         xc="PBE",
         kpts={"size": grid, "gamma": True},
-        #gpts=(18,18,28),
         convergence={"density": density_conv},
         mixer=MixerSum(0.25, 8, 100),
         txt=f"{dir}/{seed}/{seed}-scf.txt"
     )
-
+    corrected_grid =adaptative_g_grid(calc,atoms)
+    if corrected_grid is not None:
+        calc = GPAW(
+            mode=PW(ecut), 
+            xc="PBE",
+            kpts={"size": grid, "gamma": True},
+            gpts=corrected_grid,
+            convergence={"density": density_conv},
+            mixer=MixerSum(0.25, 8, 100),
+            txt=f"{dir}/{seed}/{seed}-scf.txt"
+        )
     atoms.calc = calc
-
     atoms.get_potential_energy()
     calc.write(f"{dir}/{seed}/{seed}-scf.gpw", mode="all")
     

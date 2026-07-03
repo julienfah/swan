@@ -1,7 +1,9 @@
 import spglib
 import argparse
-from ase.io import read
 from gpaw import GPAW
+import numpy as np
+from math import ceil,lcm
+from fractions import Fraction
 
 def get_crystal_system(atoms):
     '''returns the crystal system of the given atoms object based on its space group number.'''
@@ -30,13 +32,59 @@ def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n
     for i,atom in enumerate(atoms):
         for n,l,f in zip(setups[i].n_j, setups[i].l_j, setups[i].f_j):
             if f>0 :tot_val_bands += 2*l+1
-    result = int(tot_val_bands * n_bands_per_valence_el)
+    result = int(tot_val_bands * n_bands_per_valence_el) # should we add a factor of K to relate to nwann? see tests
     print(f"Estimated number of bands based on valence electrons: {result}. Will be capped between {lower_cap} and {higher_cap}.")
-    
+
     return max(lower_cap, min(higher_cap, result))
 
 
+def adaptative_k_grid():
 
+    raise NotImplementedError("This function is not yet implemented. Please provide the implementation for adaptative_k_grid.")
+
+
+
+def adaptative_g_grid(scf_calc,atoms):
+    #create a dummy calculation to get the ggrid automatically, which is compatible with ecut
+    scf_calc.initialize(atoms=atoms)
+    auto_ggrid = scf_calc.wfs.gd.N_c
+    print(f"Automatically determined G-grid: {auto_ggrid}")
+    #compare it to the symmetries of the space group
+    sym_dataset = spglib.get_symmetry_dataset((atoms.cell, atoms.get_scaled_positions(), atoms.numbers))
+    translations = np.unique(sym_dataset.translations,axis=0)
+    #make the g-grid compatible with the translations of the space group if non symmorphic
+    symmorphic = (len(translations) == 1 and np.allclose(translations, 0, atol=1e-3))
+    if not symmorphic:
+        print("The space group is non-symmorphic. Adjusting G-grid to be compatible with the translations.")
+        mins = [1, 1, 1]
+        for translation in translations:
+            if np.allclose(translation, 0, atol=1e-3): continue
+            for i,t_i in enumerate(translation):
+                if t_i != 0:
+                    # Ensure that the G-grid is a multiple of the translation vector
+                    frac = Fraction(t_i).limit_denominator(20)
+                    if frac.denominator > 1:
+                        mins[i] = lcm(mins[i], frac.denominator)
+        # get GPAW's natural grid and round up to satisfy both ecut and symmetry
+        result = tuple(
+            next_fft_friendly(mins[i], auto_ggrid[i])
+            for i in range(3)
+        )
+        print(f"Adjusted G-grid to satisfy both ecut and symmetry: {result}")
+    else:
+        result = auto_ggrid
+
+    return result
+
+def next_fft_friendly(n, min_n):
+    """Find smallest number >= min_n that is divisible by n (symmetry) and FFT-friendly."""
+    from sympy import factorint
+    candidate = ceil(min_n / n) * n
+    while True:
+        factors = set(factorint(candidate).keys())
+        if factors <= {2, 3, 5}:
+            return candidate
+        candidate += n            
 
 
 
