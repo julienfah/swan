@@ -4,6 +4,9 @@ from gpaw import GPAW
 import numpy as np
 from math import ceil,lcm
 from fractions import Fraction
+from wannierberri.symmetry.point_symmetry import PointGroup
+from wannierberri.grid.grid import determineNK
+
 
 def get_crystal_system(atoms):
     '''returns the crystal system of the given atoms object based on its space group number.'''
@@ -38,14 +41,22 @@ def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n
     return max(lower_cap, min(higher_cap, result))
 
 
-def adaptative_k_grid():
-
-    raise NotImplementedError("This function is not yet implemented. Please provide the implementation for adaptative_k_grid.")
+def adaptative_k_grid(atoms,nk_length=40,multiplier=1):
+    # go through high sym points and find the smallest mesh that gives all points on the grid, then use a multiple of that
+    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    periodic = np.array(atoms.pbc)
+    NKdiv, NKFFT = determineNK(
+        periodic=periodic,
+        NKdiv=None, NKFFT=1, NK=None, length=nk_length,
+        NKFFT_recommended =1,
+        pointgroup=pg
+    )
+    return tuple(multiplier * NKdiv * NKFFT)
 
 
 
 def adaptative_g_grid(scf_calc,atoms):
-    #create a dummy calculation to get the ggrid automatically, which is compatible with ecut
+    #create a dummy calculation to get the g-grid determined by gpaw from ecut
     scf_calc.initialize(atoms=atoms)
     auto_ggrid = scf_calc.wfs.gd.N_c
     print(f"Automatically determined G-grid: {auto_ggrid}")
@@ -115,6 +126,10 @@ def parse_args():
     parser.add_argument(
         '--seed', default=None,
         help='Seed name for output files (default: chemical formula)'
+    )
+    parser.add_argument(
+        '--auto-nk-grid', action='store_true', default=None, dest="auto_nk_grid",
+        help='Automatically determine the k-point grid based on the crystal structure. Overrides --nk if set'
     )
     parser.add_argument(
         '--nk', type=int, default=None,

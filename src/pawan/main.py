@@ -28,7 +28,7 @@ def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
     )
     return tuple(NKdiv * NKFFT)
 
-def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1):
+def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1,auto_nk_grid=False):
     '''
     Perform self-consistent field calculation for the given atoms. 
 
@@ -36,7 +36,10 @@ def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1):
     :param seed: Seed name for output files.
     '''
     print("Running self-consistent calculation")
-    kx,ky,kz = compute_nscf_kmesh(atoms,NKFFT,NK)  #compute_kmesh(atoms,emp_param=30)
+    if auto_nk_grid:
+        kx,ky,kz = adaptative_k_grid(atoms,nk_length=40,multiplier=1)#if works well pass nk_length as param
+    else:
+        kx,ky,kz = compute_nscf_kmesh(atoms,NKFFT,NK)
     print(f"Using k-mesh: {kx}x{ky}x{kz}")
     grid = [kx,ky,kz]
     calc = GPAW(
@@ -184,7 +187,8 @@ def dft_bands(seed,dir,dft_nbands=14,npoints=100):
 def auto_workflow(
     atoms, 
     seed, 
-    dir="test", 
+    dir="test",
+    auto_nk_grid=False, 
     nk=12,
     nkfft=1,
     ecut=500.0, 
@@ -212,7 +216,7 @@ def auto_workflow(
     skip_wannier=False
 ):
     if not skip_scf:
-        scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
+        scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
     
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
@@ -230,7 +234,7 @@ def auto_workflow(
 
     dft_plot_nbands = dft_plot_nbands if dft_plot_nbands is not None else n_bands
     print(f"Using {dft_plot_nbands} bands for DFT band structure plot.")
-    dft_bands(seed=seed,dir=dir,npoints=npoints,dft_nbands=dft_plot_nbands)
+    dft_bands(seed=seed,dir=dir,npoints=int(npoints/3),dft_nbands=dft_plot_nbands)
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
 
 def main():
