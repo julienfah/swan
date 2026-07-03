@@ -187,7 +187,7 @@ def auto_workflow(
     nbands=None, 
     unconverged_bands=2, 
     npoints=200, 
-    dft_plot_nbands=14,
+    dft_plot_nbands=None,
     K=1.2, 
     spin_channel=0, 
     npts_dos=1001, 
@@ -205,8 +205,9 @@ def auto_workflow(
 ):
     if not skip_scf:
         scf(atoms,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
+    
+    n_bands = nbands if nbands is not None else nbands_per_atom * len(atoms)
     if not skip_nscf:
-        n_bands = nbands if nbands is not None else nbands_per_atom * len(atoms)
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
         
     dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
@@ -218,6 +219,9 @@ def auto_workflow(
         wannierize(proj_set=proj_set, outer_win=outer_win, frozen_win=frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
         
     bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=npoints)
+
+    dft_plot_nbands = dft_plot_nbands if dft_plot_nbands is not None else int(n_bands/K)
+    print(f"Using {dft_plot_nbands} bands for DFT band structure plot.")
     dft_bands(seed=seed,dir=dir,npoints=npoints,dft_nbands=dft_plot_nbands)
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
 
