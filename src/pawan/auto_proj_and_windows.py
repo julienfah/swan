@@ -174,7 +174,7 @@ def initial_DOS_energy_scan(calc=None, dir="test", seed=None, dos_kwargs={'spin'
         for nl_str in occupied_ls:
             candidates.append((iatom, nl_str))#(iatom, (n, l_str)))
     '''
-    candidates = [(iatom, (4,l)) for l in ['s', 'p', 'd','f'] for iatom, atom in enumerate(atoms)]
+    candidates = [(iatom, (4,l)) for l in ['s', 'p', 'd'] for iatom, atom in enumerate(atoms)]
 
     # compute orbital PDOS for each candidate
     pdos={}

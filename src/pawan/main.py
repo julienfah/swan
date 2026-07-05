@@ -238,7 +238,7 @@ def auto_workflow(
 
     dft_plot_nbands = dft_plot_nbands if dft_plot_nbands is not None else n_bands
     print(f"Using {dft_plot_nbands} bands for DFT band structure plot.")
-    dft_bands(seed=seed,dir=dir,npoints=int(npoints/3),dft_nbands=dft_plot_nbands)
+    dft_bands(seed=seed,dir=dir,npoints=int(npoints/2.),dft_nbands=dft_plot_nbands)
     plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
 
 def main():
