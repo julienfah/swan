@@ -3,6 +3,7 @@ from gpaw import GPAW
 from wannierberri.w90files import WannierData
 from wannierberri import System_R,Path,evaluate_k_path
 from gpaw.mpi import serial_comm
+from ase.dft.kpoints import parse_path_string
 
 def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_params=dict(error_threshold=0.1,warning_threshold=0.01,nbands_upper_skip=2),wannierization_params=dict(num_iter=100,conv_tol=1e-8,print_progress_every=20,sitesym=True,localise=True,),comm=serial_comm):
     '''
@@ -51,13 +52,13 @@ def interpolate_bands(seed,dir,npoints=200,comm=serial_comm):
     system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
     kpoints = path.special_points  # dict of label: kcoords
-    path_labels = path.path.split(',')[0]        # string like 'GXWLGK'
-    print(f"Interpolating bands along the path: {path_labels}")
+    path_labels = parse_path_string(path.path)[0]       # string like 'GXWLGK', drop unconnected parts at the moment
+    print(f"Interpolating bands along the path: {path_labels[0]}")
 
     wb_path = Path.from_nodes(
         real_lattice=system.real_lattice,
-        nodes=list(kpoints.values()),  
-        labels=list(kpoints.keys()),
+        nodes=[kpoints[label] for label in path_labels],  
+        labels=list(path_labels),
         length=npoints
 )
 

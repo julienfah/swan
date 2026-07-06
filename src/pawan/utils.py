@@ -79,14 +79,14 @@ def adaptative_high_sym_k_grid(atoms,nk_length=40,multiplier=1):
             denominator_per_coordinate = [Fraction(coord).limit_denominator(10).denominator for coord in point]
             multiples.append(denominator_per_coordinate)
     multiples = np.lcm.reduce(multiples,axis=0) if multiples else np.array([1,1,1])
-    print(f"LCM of denominators for special points: {multiples}")
+    #print(f"LCM of denominators for special points: {multiples}")
     point_group_grid =adaptative_k_grid(atoms,nk_length=nk_length,multiplier=multiplier)#minimal_symmetric_kgrid(atoms)
-    print(f"Automatically determined k-grid: {point_group_grid}")
+    #print(f"Automatically determined k-grid: {point_group_grid}")
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
     #now test all grids btw the determined one and the one multiplied by the lcm of the denominators of the special points, and select the one with the smallest number of k-points that is compatible with the point group and contains all special points
     candidates = [i for i in iterate_vector(np.array(point_group_grid),np.array(point_group_grid)*multiples) if pg.symmetric_grid(i) and np.all(i % multiples == 0)]
     selected_grid = min(candidates, key=lambda x: np.prod(x))  # select the one with the smallest product (fewest k-points)
-    print(f"Selected k-grid: {selected_grid}")
+    #print(f"Selected k-grid: {selected_grid}")
     return tuple(selected_grid)
 
 
