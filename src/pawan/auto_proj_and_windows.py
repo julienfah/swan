@@ -7,9 +7,10 @@ from collections import defaultdict
 from wannierberri.symmetry.wyckoff_position import split_into_orbits
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
+from gpaw.mpi import serial_comm
 
-def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1):
-    calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
+def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1,comm=serial_comm):
+    calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
     selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,dir=dir,seed=seed,calc=calc,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
 
     space_group = SpaceGroup.from_gpaw(calc)
@@ -49,10 +50,10 @@ def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001,
         f.write(f"Selected Projections:\n {'\n'.join(map(str, projs))},\n")
     return ProjectionsSet(projections=projs), outer_win, frozen_win, nwann
 
-def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1):
+def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1, comm=serial_comm):
     '''Placeholder for Zhang's projection method, which will be implemented in the future.'''
     if calc is None:
-        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
+        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(**dos_kwargs)
 
@@ -147,9 +148,9 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
 
     return selected_orbitals, out_win, frozen_win, nwann
 
-def initial_DOS_energy_scan(calc=None, dir="test", seed=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}, gap_thres=0.1):
+def initial_DOS_energy_scan(calc=None, dir="test", seed=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}, gap_thres=0.1, comm=serial_comm):
     if calc is None:
-        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
+        calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(**dos_kwargs)
     print(f"Fermi level: {e_fermi} eV")

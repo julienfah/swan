@@ -1,11 +1,13 @@
 import spglib
 import argparse
 from gpaw import GPAW
+from gpaw.mpi import world
 import numpy as np
 from math import ceil,lcm
 from fractions import Fraction
 from wannierberri.symmetry.point_symmetry import PointGroup
 from wannierberri.grid.grid import determineNK
+from ase import Atoms
 
 
 def get_crystal_system(atoms):
@@ -20,6 +22,18 @@ def get_crystal_system(atoms):
     if 143 <= sg <= 167: return 'trigonal'
     if 168 <= sg <= 194: return 'hexagonal'
     if 195 <= sg <= 230: return 'cubic'
+
+def standardize_cell(atoms):
+    '''Standardizes the cell of the given atoms object using spglib.'''
+    cell = spglib.standardize_cell(
+        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers),
+        to_primitive=True,
+        symprec=1e-3
+    )
+    if cell is None:
+        raise ValueError("Failed to standardize the cell. Please check the input structure.")
+    atoms = Atoms(numbers=cell[2], scaled_positions=cell[1], cell=cell[0], pbc=True)
+    return atoms
 
 def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n_bands_per_valence_el=4,lower_cap=18,higher_cap=200):
     if calc is None:
@@ -36,7 +50,8 @@ def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n
         for n,l,f in zip(setups[i].n_j, setups[i].l_j, setups[i].f_j):
             if f>0 :tot_val_bands += 2*l+1
     result = int(tot_val_bands * n_bands_per_valence_el) # should we add a factor of K to relate to nwann? see tests
-    print(f"Estimated number of bands based on valence electrons: {result}. Will be capped between {lower_cap} and {higher_cap}.")
+    if world.rank == 0:
+        print(f"Estimated number of bands based on valence electrons: {result}. Will be capped between {lower_cap} and {higher_cap}.")
 
     return max(lower_cap, min(higher_cap, result))
 
@@ -59,14 +74,16 @@ def adaptative_g_grid(scf_calc,atoms):
     #create a dummy calculation to get the g-grid determined by gpaw from ecut
     scf_calc.initialize(atoms=atoms)
     auto_ggrid = scf_calc.wfs.gd.N_c
-    print(f"Automatically determined G-grid: {auto_ggrid}")
+    if world.rank == 0:
+        print(f"Automatically determined G-grid: {auto_ggrid}")
     #compare it to the symmetries of the space group
     sym_dataset = spglib.get_symmetry_dataset((atoms.cell, atoms.get_scaled_positions(), atoms.numbers))
     translations = np.unique(sym_dataset.translations,axis=0)
     #make the g-grid compatible with the translations of the space group if non symmorphic
     symmorphic = (len(translations) == 1 and np.allclose(translations, 0, atol=1e-3))
     if not symmorphic:
-        print("The space group is non-symmorphic. Adjusting G-grid to be compatible with the translations.")
+        if world.rank == 0:
+            print("The space group is non-symmorphic. Adjusting G-grid to be compatible with the translations.")
         mins = [1, 1, 1]
         for translation in translations:
             if np.allclose(translation, 0, atol=1e-3): continue
@@ -81,7 +98,8 @@ def adaptative_g_grid(scf_calc,atoms):
             next_fft_friendly(mins[i], auto_ggrid[i])
             for i in range(3)
         )
-        print(f"Adjusted G-grid to satisfy both ecut and symmetry: {result}")
+        if world.rank == 0:
+            print(f"Adjusted G-grid to satisfy both ecut and symmetry: {result}")
     else:
         result = auto_ggrid
 

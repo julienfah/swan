@@ -1,147 +1,15 @@
-import numpy as np
 from ase import Atoms
-from gpaw import GPAW, PW, MixerSum
-from irrep.spacegroup import SpaceGroup
-from wannierberri.w90files import WannierData
-from wannierberri.grid.grid import determineNK
-from wannierberri import System_R,Path,evaluate_k_path
+from gpaw import GPAW
 from matplotlib import pyplot as plt
 from pathlib import Path as Path_
 from ase.io import read
-import spglib
-from wannierberri.symmetry.point_symmetry import PointGroup
+from gpaw.mpi import world,serial_comm
 
-#import ray
-#ray.init(num_cpus=18,num_gpus=20,ignore_reinit_error=True)
-
-from pawan.utils import parse_args, adaptative_nscf_nbands,adaptative_k_grid,adaptative_g_grid
+from pawan.utils import parse_args, adaptative_nscf_nbands,standardize_cell
+from pawan.dft import full_dft_run
+from pawan.wannier import wannierize,interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
 
-def compute_nscf_kmesh(atoms,NKFFT_=1,NK_=12):## correct??
-    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
-    periodic = np.array(atoms.pbc)
-    NKdiv, NKFFT = determineNK(
-        periodic=periodic,
-        NKdiv=None, NKFFT=NKFFT_, NK=NK_,
-        NKFFT_recommended =NKFFT_,
-        pointgroup=pg
-    )
-    return tuple(NKdiv * NKFFT)
-
-def scf(atoms,seed,dir,ecut=500,density_conv=1e-7,NK=12,NKFFT=1,auto_nk_grid=False):
-    '''
-    Perform self-consistent field calculation for the given atoms. 
-
-    :param atoms: ASE Atoms object representing the atomic structure that will be used for the computation.
-    :param seed: Seed name for output files.
-    '''
-    print("Running self-consistent calculation")
-    if auto_nk_grid:
-        kx,ky,kz = adaptative_k_grid(atoms,nk_length=40,multiplier=1)#if works well pass nk_length as param
-    else:
-        kx,ky,kz = compute_nscf_kmesh(atoms,NKFFT,NK)
-    print(f"Using k-mesh: {kx}x{ky}x{kz}")
-    grid = [kx,ky,kz]
-    calc = GPAW(
-        mode=PW(ecut), 
-        xc="PBE",
-        kpts={"size": grid, "gamma": True},
-        convergence={"density": density_conv},
-        mixer=MixerSum(0.25, 8, 100),
-        txt=f"{dir}/{seed}/{seed}-scf.txt"
-    )
-    corrected_grid =adaptative_g_grid(calc,atoms)
-    if corrected_grid is not None:
-        calc = GPAW(
-            mode=PW(ecut), 
-            xc="PBE",
-            kpts={"size": grid, "gamma": True},
-            gpts=corrected_grid,
-            convergence={"density": density_conv},
-            mixer=MixerSum(0.25, 8, 100),
-            txt=f"{dir}/{seed}/{seed}-scf.txt"
-        )
-    atoms.calc = calc
-    atoms.get_potential_energy()
-    calc.write(f"{dir}/{seed}/{seed}-scf.gpw", mode="all")
-    
-
-def nscf(seed,dir,nbands=40,unconverged_bands=2,NK=12,NKFFT=1):
-    '''
-    Perform non-self-consistent field calculation, reading from the output of the SCF calculation.    
-    '''
-    print("Running non-self-consistent calculation")
-    calc = GPAW(f'{dir}/{seed}/{seed}-scf.gpw', txt=None)
-    nscf_grid = compute_nscf_kmesh(calc.atoms,NKFFT,NK)
-    space_group = SpaceGroup.from_gpaw(calc)
-    irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
-
-    calc_nscf_irred = calc.fixed_density(
-        kpts=irred_k_points,
-        nbands=nbands,
-        convergence={"bands": nbands-unconverged_bands},
-        txt=f'{dir}/{seed}/{seed}-nscf-irred.txt')
-    calc_nscf_irred.write(f'{dir}/{seed}/{seed}-nscf-irred.gpw', mode='all')
-   
-
-def wannierize(proj_set, outer_win, frozen_win, seed,dir,spin_channel=0,unitary_params=dict(error_threshold=0.1,warning_threshold=0.01,nbands_upper_skip=2),wannierization_params=dict(num_iter=100,conv_tol=1e-8,print_progress_every=20,sitesym=True,localise=True,)):
-    '''
-    Proper wannierization of the system, using the previously determined parameters.
-
-    :param proj_set: ProjectionsSet object containing the projections to be used for the wannierization.
-    :param outer_win: Tuple containing the outer energy window boundaries.
-    :param frozen_win: Tuple containing the frozen energy window boundaries.
-    '''
-
-    calc_nscf_irred = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
-    wandata, bandstructure = WannierData.from_gpaw(
-        calculator=calc_nscf_irred,
-        spin_channel=spin_channel,
-        projections=proj_set,
-        irreducible=True,
-        files=["amn", "mmn", "eig", "symmetrizer"],
-        unitary_params=unitary_params,
-        return_bandstructure=True
-    )
-    wandata.to_npz(f"{dir}/{seed}/{seed}_wannier_data")
-
-    wandata.wannierise(
-        froz_min=frozen_win[0],    
-        froz_max=frozen_win[1],  
-        outer_min=outer_win[0],
-        outer_max=outer_win[1],# np.inf,#
-        **wannierization_params
-    )
-    wandata.chk.to_npz(f"{dir}/{seed}/{seed}_wannier_data.chk.npz")
-    #log spreads
-    with open(f"{dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
-        for center,spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
-            f.write(f"Center: {center}, Spread: {spread}\n")
-
-def interpolate_bands(seed,dir,npoints=200):
-    '''
-    Use of the Wannier functions to interpolate the bands.
-    '''
-    calc_nscf_irred = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None)
-    atoms = calc_nscf_irred.atoms
-    path = atoms.cell.bandpath()
-
-    wandata = WannierData.from_npz(seedname=f"{dir}/{seed}/{seed}_wannier_data",files=["amn", "mmn", "eig", "chk", "symmetrizer"],ignore_missing_files=False,irreducible=True)
-
-    system = System_R.from_wannierdata(wandata=wandata, berry=True)
-
-    kpoints = path.special_points  # dict of label: kcoords
-    path_labels = path.path .split(',')[0]        # string like 'GXWLGK'
-
-    wb_path = Path.from_nodes(
-        real_lattice=system.real_lattice,
-        nodes=[kpoints[label] for label in path_labels],  
-        labels=list(path_labels),
-        length=npoints
-)
-
-    bands_wannier = evaluate_k_path(system, path=wb_path)
-    return bands_wannier,wb_path
 
 
 def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed,dir):
@@ -149,7 +17,7 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed,dir):
     Plot the interpolated bands and compares with the ones from the DFT calculation.
     '''
     print("Plotting the bands to compare with DFT")
-    bs_dft = GPAW(f"{dir}/{seed}/{seed}-bands.gpw").band_structure()
+    bs_dft = GPAW(f"{dir}/{seed}/{seed}-bands.gpw",communicator=serial_comm).band_structure()
     #plot comparison
 
     fig,ax = plt.subplots(figsize=(6,6))
@@ -168,25 +36,6 @@ def plot_bands(bands_wannier,wb_path,outer_win,frozen_win,seed,dir):
     plt.title(f"{seed} band structure")
     plt.savefig(f"{dir}/{seed}/{seed}-wannierized_bands.png", dpi=200)
 
-def dft_bands(seed,dir,dft_nbands=14,npoints=100):
-    '''
-    Compute the band structure directly from the DFT calculation for comparison with the Wannier-interpolated bands.
-    '''
-    if Path_(f"{dir}/{seed}/{seed}-bands.gpw").exists():
-        print(f"DFT bands already computed for {seed}. Skipping.")
-        return
-    calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
-    # compute the band directly from gpaw for comparison
-    atoms = calc.atoms
-    path = atoms.cell.bandpath(npoints=npoints)
-    print(path)
-    dft_calc_bands = calc.fixed_density(
-        nbands=dft_nbands,
-        symmetry='off',
-        kpts=path,#{'path': list(path.values()), 'npoints': 100},
-        convergence={'bands': dft_nbands-2},
-        txt=f"{dir}/{seed}/{seed}-bands.txt")
-    dft_calc_bands.write(f"{dir}/{seed}/{seed}-bands.gpw", mode="all")
 
 def auto_workflow(
     atoms, 
@@ -219,27 +68,33 @@ def auto_workflow(
     skip_nscf=False, 
     skip_wannier=False
 ):
-    if not skip_scf:
+    '''if not skip_scf:
         scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
     
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
-        nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
-        
-    dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
-    proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
+        nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)'''
     
-    if not skip_wannier:
-        unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)
-        wannierization_params = dict(num_iter=num_iter, conv_tol=w_conv_tol, print_progress_every=print_progress_every, sitesym=not no_sitesym, localise=not no_localise)
-        wannierize(proj_set=proj_set, outer_win=outer_win, frozen_win=frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
-        
-    bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=npoints)
+    full_dft_run(seed=seed,dir=dir,atoms=atoms,skip_scf=skip_scf,skip_nscf=skip_nscf,auto_nk_grid=auto_nk_grid,nk=nk,nkfft=nkfft,ecut=ecut,density_conv_scf=density_conv_scf,nbands_per_valence_el=nbands_per_valence_el,nbands_per_atom=nbands_per_atom,nbands=nbands,unconverged_bands=unconverged_bands,npoints=npoints)
+    world.barrier()
 
-    dft_plot_nbands = dft_plot_nbands if dft_plot_nbands is not None else n_bands
-    print(f"Using {dft_plot_nbands} bands for DFT band structure plot.")
-    dft_bands(seed=seed,dir=dir,npoints=int(npoints/2.),dft_nbands=dft_plot_nbands)
-    plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
+    if world.rank == 0:
+        #import ray
+        #ray.init(num_cpus=16,num_gpus=18,ignore_reinit_error=True)
+
+        print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
+        dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
+        
+        proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
+        
+        if not skip_wannier:
+            unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)
+            wannierization_params = dict(num_iter=num_iter, conv_tol=w_conv_tol, print_progress_every=print_progress_every, sitesym=not no_sitesym, localise=not no_localise)
+            wannierize(proj_set=proj_set, outer_win=outer_win, frozen_win=frozen_win,seed=seed,dir=dir,spin_channel=spin_channel, unitary_params=unitary_params, wannierization_params=wannierization_params)
+            
+        bands_wannier, wb_path = interpolate_bands(seed=seed,dir=dir,npoints=npoints)
+
+        plot_bands(bands_wannier, wb_path, outer_win, frozen_win,seed=seed,dir=dir)
 
 def main():
     ###################################
@@ -248,12 +103,7 @@ def main():
     atoms = read(args.structure)
     ###################################
     #standardize the cell
-    cell = spglib.standardize_cell(
-        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers),
-        to_primitive=True,
-        symprec=1e-3
-    )
-    atoms = Atoms(numbers=cell[2], scaled_positions=cell[1], cell=cell[0], pbc=True)
+    atoms = standardize_cell(atoms)
     ####################################
 
     seed = args.seed if args.seed is not None else atoms.get_chemical_formula()
