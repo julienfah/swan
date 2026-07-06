@@ -7,7 +7,7 @@ from collections import defaultdict
 from wannierberri.symmetry.wyckoff_position import split_into_orbits
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
-from gpaw.mpi import serial_comm
+from gpaw.mpi import serial_comm,world
 
 def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1,comm=serial_comm):
     calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
@@ -75,13 +75,16 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
         for (iatom, (n, l_str)) in candidates:
             integrated = integrate(pdos[(iatom, l_str)],emin,emax)
             total = integrate(pdos[(iatom,l_str)], energies[0], energies[-1])
-            print(f"Total integrated pDOS for {calc.atoms[iatom]}, {l_str}: {total}")
+            if world.rank == 0:
+                print(f"Total integrated pDOS for {calc.atoms[iatom]}, {l_str}: {total}")
             if integrated > alpha[l_str]:
-                print(f"Selected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} > alpha={alpha[l_str]:.3f}\n\n")
+                if world.rank == 0:
+                    print(f"Selected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} > alpha={alpha[l_str]:.3f}\n\n")
                 selected_orbitals.append((iatom,( n, l_str)))
                 nwann += 2*l_num[l_str] + 1
             else:
-                print(f"Rejected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} <= alpha={alpha[l_str]:.3f}\n\n")
+                if world.rank == 0:
+                    print(f"Rejected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} <= alpha={alpha[l_str]:.3f}\n\n")
         return selected_orbitals, nwann
 
     alpha = alpha_initial
@@ -110,7 +113,7 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
     #refine the orbital selection based on the refined outer window
     selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
     print(f"Refined projections: {selected_orbitals}, nwann={nwann}")
-    # ensure that at least nwann bands are inside the window for any k point
+    '''# ensure that at least nwann bands are inside the window for any k point
     eigs = np.array([calc.get_eigenvalues(kpt=k) for k in range(len(calc.get_ibz_k_points()))])
     for k_eigs in eigs:
         in_window = k_eigs[(k_eigs >= Emin_0) & (k_eigs <= emax_refined)]
@@ -139,7 +142,8 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
                 print(f"Extended emax to {emax_refined:.3f} eV to ensure free bands exist at all k-points.")
     
     out_win = (Emin_0, emax_refined)
-    frozen_win = (Emin_0, froz_max)
+    frozen_win = (Emin_0, froz_max)'''
+    out_win, frozen_win = safety_check_windows(calc,nwann,(Emin_0, emax_refined),(Emin_0, e_fermi + 2))
     #could do all checks in one kpoints loop, more efficient, but this is clearer for now
 
     print(f"Selected orbitals: {selected_orbitals}")
@@ -147,6 +151,38 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
     print(f"Frozen window: {frozen_win[0]} to {frozen_win[1]} eV")
 
     return selected_orbitals, out_win, frozen_win, nwann
+
+def safety_check_windows(calc,nwann,outer_win, frozen_win):
+    emin_0, emax_0 = outer_win
+    emax_refined = emax_0
+    # ensure that at least nwann bands are inside the window for any k point
+    eigs = np.array([calc.get_eigenvalues(kpt=k) for k in range(len(calc.get_ibz_k_points()))])
+    for k_eigs in eigs:
+        in_window = k_eigs[(k_eigs >= emin_0) & (k_eigs <= emax_0)]
+        if len(in_window) < nwann:
+            above_emin = k_eigs[k_eigs >= emin_0]
+            emax_refined = max(emax_refined, above_emin[nwann-1])  # set emax to include at least nwann bands
+            print(f"Adjusted emax to {emax_refined} eV to include at least {nwann} bands at any k-point.")
+
+    # ensure that there is no more than nwann bands in the frozen window for any k point
+    froz_max = frozen_win[1]  # start with the provided frozen window max
+    #froz_max = calc.get_homo_lumo()[1]+2  # bottom of conduction band if there is one
+    for k_eigs in eigs:
+        in_outer = k_eigs[(k_eigs >= emin_0) & (k_eigs <= emax_refined)]
+        in_frozen = in_outer[(in_outer >= emin_0) & (in_outer <= froz_max)]
+        if len(in_frozen) > nwann:
+            froz_max = min(froz_max, in_frozen[nwann] - 0.01)
+            print(f"Frozen window capped to {froz_max:.3f} eV (nfrozen must be < nwann={nwann})")
+
+    # check if there is at least one band btw froz_max and emax_refined at any k point
+    for k_eigs in eigs:
+        in_free = k_eigs[(k_eigs > froz_max) & (k_eigs <= emax_refined)]
+        if len(in_free) == 0:
+            above_frozen = k_eigs[k_eigs > froz_max]
+            if len(above_frozen) > 0:
+                emax_refined = max(emax_refined, above_frozen[0] + 0.01)
+                print(f"Extended emax to {emax_refined:.3f} eV to ensure free bands exist at all k-points.")
+    return (emin_0, emax_refined),(emin_0, froz_max)
 
 def initial_DOS_energy_scan(calc=None, dir="test", seed=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05}, gap_thres=0.1, comm=serial_comm):
     if calc is None:
@@ -229,7 +265,8 @@ def initial_DOS_energy_scan(calc=None, dir="test", seed=None, dos_kwargs={'spin'
     
 def find_zero_dos_window(energies, dos, e_fermi, gap=0.0, threshold=1e-6,gap_thres=0.1):
     delta = gap / 2 + 0.2  # must span at least the gap to ensure a valid target window
-    print(f"Gap: {gap} eV, Delta for target window: {delta} eV")
+    if world.rank == 0:
+        print(f"Gap: {gap} eV, Delta for target window: {delta} eV")
     target_low = e_fermi - delta
     target_high = e_fermi + delta
     
@@ -238,7 +275,8 @@ def find_zero_dos_window(energies, dos, e_fermi, gap=0.0, threshold=1e-6,gap_thr
     intervals = [(s, e) for s, e in intervals if (e - s) >= 1e-3]
     #merge very close intervals
     intervals = merge_intervals(intervals, threshold=gap_thres)# add a param for threshold, like 1ev? e.g. would like to be able to get s bamd of GaAs
-    print(f"Raw non-zero-DOS energy intervals: \n {intervals}")
+    if world.rank == 0:
+        print(f"Raw non-zero-DOS energy intervals: \n {intervals}")
     
     # nearest interval start at or below target_low
     candidates_low = [s for s, e in intervals if s <= target_low]

@@ -10,7 +10,7 @@ import spglib
 import subprocess
 
 
-from pawan.utils import adaptative_g_grid,adaptative_k_grid,adaptative_nscf_nbands,standardize_cell
+from pawan.utils import adaptative_g_grid,adaptative_k_grid,adaptative_nscf_nbands,standardize_cell,adaptative_high_sym_k_grid
 
 
 
@@ -40,7 +40,7 @@ def scf(seed,dir,atoms=None,input_file=None,ecut=500,density_conv=1e-7,NK=12,NKF
         atoms = standardize_cell(read(input_file))
 
     if auto_nk_grid:
-        kx,ky,kz = adaptative_k_grid(atoms,nk_length=40,multiplier=1)#if works well pass nk_length as param
+        kx,ky,kz = adaptative_high_sym_k_grid(atoms,nk_length=20,multiplier=1)#if works well pass nk_length as param
     else:
         kx,ky,kz = compute_nscf_kmesh(atoms,NKFFT,NK)
     if world.rank == 0:

@@ -51,12 +51,13 @@ def interpolate_bands(seed,dir,npoints=200,comm=serial_comm):
     system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
     kpoints = path.special_points  # dict of label: kcoords
-    path_labels = path.path .split(',')[0]        # string like 'GXWLGK'
+    path_labels = path.path.split(',')[0]        # string like 'GXWLGK'
+    print(f"Interpolating bands along the path: {path_labels}")
 
     wb_path = Path.from_nodes(
         real_lattice=system.real_lattice,
-        nodes=[kpoints[label] for label in path_labels],  
-        labels=list(path_labels),
+        nodes=list(kpoints.values()),  
+        labels=list(kpoints.keys()),
         length=npoints
 )
 

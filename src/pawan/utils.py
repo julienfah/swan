@@ -6,6 +6,7 @@ import numpy as np
 from math import ceil,lcm
 from fractions import Fraction
 from wannierberri.symmetry.point_symmetry import PointGroup
+from wannierberri.grid.grid import iterate_vector
 from wannierberri.grid.grid import determineNK
 from ase import Atoms
 
@@ -57,7 +58,6 @@ def adaptative_nscf_nbands(seed,dir,calc=None,nbands=None,nbands_per_atom=None,n
 
 
 def adaptative_k_grid(atoms,nk_length=40,multiplier=1):
-    # go through high sym points and find the smallest mesh that gives all points on the grid, then use a multiple of that
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
     periodic = np.array(atoms.pbc)
     NKdiv, NKFFT = determineNK(
@@ -68,6 +68,26 @@ def adaptative_k_grid(atoms,nk_length=40,multiplier=1):
     )
     return tuple(multiplier * NKdiv * NKFFT)
 
+def adaptative_high_sym_k_grid(atoms,nk_length=40,multiplier=1):
+    '''
+    Creates a k-grid that fits the point group of the system that contains all high-symmetry points in the BZ, and is a multiple of the original one.
+    '''
+    special_points = atoms.cell.bandpath().special_points #dict letter: np.array([x,y,z]) in fractional coordinates
+    multiples = []
+    for letter, point in special_points.items():
+        if not np.allclose(point, 0.0) and not np.allclose(point, 1.0):
+            denominator_per_coordinate = [Fraction(coord).limit_denominator(10).denominator for coord in point]
+            multiples.append(denominator_per_coordinate)
+    multiples = np.lcm.reduce(multiples,axis=0) if multiples else np.array([1,1,1])
+    print(f"LCM of denominators for special points: {multiples}")
+    point_group_grid =adaptative_k_grid(atoms,nk_length=nk_length,multiplier=multiplier)#minimal_symmetric_kgrid(atoms)
+    print(f"Automatically determined k-grid: {point_group_grid}")
+    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    #now test all grids btw the determined one and the one multiplied by the lcm of the denominators of the special points, and select the one with the smallest number of k-points that is compatible with the point group and contains all special points
+    candidates = [i for i in iterate_vector(np.array(point_group_grid),np.array(point_group_grid)*multiples) if pg.symmetric_grid(i) and np.all(i % multiples == 0)]
+    selected_grid = min(candidates, key=lambda x: np.prod(x))  # select the one with the smallest product (fewest k-points)
+    print(f"Selected k-grid: {selected_grid}")
+    return tuple(selected_grid)
 
 
 def adaptative_g_grid(scf_calc,atoms):
