@@ -110,7 +110,7 @@ def dft_bands(seed,dir,dft_nbands=14,npoints=100):
     dft_calc_bands.write(f"{dir}/{seed}/{seed}-bands.gpw", mode="all")
 
 
-def full_dft_run(seed,dir,atoms=None,input_file=None,skip_scf=False,skip_nscf=False,auto_nk_grid=False,nk=12,nkfft=1,ecut=500.0,density_conv_scf=1e-7,nbands_per_valence_el=4,nbands_per_atom=None,nbands=None,unconverged_bands=2,npoints=100):
+def full_dft_run(seed,dir,atoms=None,input_file=None,skip_scf=False,skip_nscf=False,auto_nk_grid=False,nk=12,nkfft=1,ecut=500.0,density_conv_scf=1e-7,nbands_per_valence_el=4,nbands_per_atom=None,nbands=None,unconverged_bands=2,npoints=100,dft_plot_nbands=None):
     '''
     Run the full DFT calculation (SCF and NSCF + band structure) for the given atoms.
     '''
@@ -119,4 +119,5 @@ def full_dft_run(seed,dir,atoms=None,input_file=None,skip_scf=False,skip_nscf=Fa
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
-    dft_bands(seed=seed,dir=dir,dft_nbands=n_bands,npoints=npoints)
+    dft_nbands = n_bands if dft_plot_nbands is None else dft_plot_nbands
+    dft_bands(seed=seed,dir=dir,dft_nbands=dft_nbands,npoints=npoints)
