@@ -46,7 +46,7 @@ def auto_workflow(
     nkfft=1,
     ecut=500.0, 
     density_conv_scf=1e-7,
-    gap_thres = 0.1,
+    gap_thres = 1,
     nbands_per_valence_el=5,
     nbands_per_atom=None, 
     nbands=None, 
@@ -60,7 +60,8 @@ def auto_workflow(
     num_iter=100, 
     w_conv_tol=1e-8, 
     print_progress_every=20,
-    maximize_fw=False, 
+    maximize_fw=False,
+    objective_wd=None, 
     no_sitesym=False, 
     no_localise=False,
     error_threshold=0.1, 
@@ -86,7 +87,7 @@ def auto_workflow(
         print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
         dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
         
-        proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres,maximize_fw=maximize_fw)
+        proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres,maximize_fw=maximize_fw,objective_wd=objective_wd)
         
         if not skip_wannier:
             unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)
