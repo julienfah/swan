@@ -6,11 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ase>=3.29.0",
-    "gpaw>=25.7.0",
     "irrep>=2.6.3",
+    "mpi4py>=4.1.2",
     "numba>=0.65.1",
     "numpy>=2.4.6",
     "pyfftw>=0.15.1",
+    "pyxtal>=1.1.1",
     "ray>=2.55.1",
     "spglib>=2.7.0",
     "wannierberri>=26.4.6",
@@ -25,3 +26,41 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pawan"]
+
+[dependency-groups]
+dev = [
+    "autopep8>=2.3.2",
+    "flake8>=7.3.0",
+]
+
+[tool.ruff]
+# Maximum line length 
+line-length = 120
+
+# Excluded directories and files 
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "__init__.py",
+    ".eggs",
+    "*.egg",
+]
+
+[tool.ruff.lint]
+# Enable default pycodestyle (E/W) and Pyflakes (F) rules to match Flake8
+select = ["E", "W", "F"]
+
+# Ignored rules (equivalent to ignore)
+ignore = [
+    "E266", # too many leading '#' for block comment
+    "E731", # do not assign a lambda expression, use a def
+    "E721", # do not compare types
+    "E272", # multiple spaces before keyword
+    "W605", # invalid escape sequence - does not allow to use LaTeX
+]
+
+# Per-file rule ignores (equivalent to per-file-ignores)
+[tool.ruff.lint.per-file-ignores]
+"conftest.py" = ["F401"] # unused imports allowed in conftest.py
