@@ -47,7 +47,7 @@ def auto_workflow(
     ecut=500.0, 
     density_conv_scf=1e-7,
     gap_thres = 0.1,
-    nbands_per_valence_el=4,
+    nbands_per_valence_el=5,
     nbands_per_atom=None, 
     nbands=None, 
     unconverged_bands=2, 
@@ -59,7 +59,8 @@ def auto_workflow(
     dos_width=0.05,
     num_iter=100, 
     w_conv_tol=1e-8, 
-    print_progress_every=20, 
+    print_progress_every=20,
+    maximize_fw=False, 
     no_sitesym=False, 
     no_localise=False,
     error_threshold=0.1, 
@@ -75,7 +76,7 @@ def auto_workflow(
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)'''
     
-    full_dft_run(seed=seed,dir=dir,atoms=atoms,skip_scf=skip_scf,skip_nscf=skip_nscf,auto_nk_grid=auto_nk_grid,nk=nk,nkfft=nkfft,ecut=ecut,density_conv_scf=density_conv_scf,nbands_per_valence_el=nbands_per_valence_el,nbands_per_atom=nbands_per_atom,nbands=nbands,unconverged_bands=unconverged_bands,npoints=npoints)
+    full_dft_run(seed=seed,dir=dir,atoms=atoms,skip_scf=skip_scf,skip_nscf=skip_nscf,auto_nk_grid=auto_nk_grid,nk=nk,nkfft=nkfft,ecut=ecut,density_conv_scf=density_conv_scf,nbands_per_valence_el=nbands_per_valence_el,nbands_per_atom=nbands_per_atom,nbands=nbands,unconverged_bands=unconverged_bands,npoints=npoints,dft_plot_nbands=dft_plot_nbands)
     world.barrier()
 
     if world.rank == 0:
@@ -85,7 +86,7 @@ def auto_workflow(
         print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
         dos_kwargs = {'spin': spin_channel, 'npts': npts_dos, 'width': dos_width}
         
-        proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
+        proj_set, outer_win, frozen_win, nwann = get_proj_set(K=K,seed=seed,dir=dir,dos_kwargs=dos_kwargs,gap_thres=gap_thres,maximize_fw=maximize_fw)
         
         if not skip_wannier:
             unitary_params = dict(error_threshold=error_threshold, warning_threshold=warning_threshold, nbands_upper_skip=unconverged_bands)

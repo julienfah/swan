@@ -9,9 +9,9 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm,world
 
-def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1,comm=serial_comm):
+def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1,maximize_fw=False,comm=serial_comm):
     calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
-    selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,dir=dir,seed=seed,calc=calc,dos_kwargs=dos_kwargs,gap_thres=gap_thres)
+    selected_orbitals, outer_win, frozen_win,nwann = Zhang_projection_method(K=K,dir=dir,seed=seed,calc=calc,dos_kwargs=dos_kwargs,gap_thres=gap_thres,maximize_fw=maximize_fw,comm=comm)
 
     space_group = SpaceGroup.from_gpaw(calc)
 
@@ -50,7 +50,7 @@ def get_proj_set(K=1.2,seed=None,dir="test",dos_kwargs={'spin': 0, 'npts': 1001,
         f.write(f"Selected Projections:\n {'\n'.join(map(str, projs))},\n")
     return ProjectionsSet(projections=projs), outer_win, frozen_win, nwann
 
-def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1, comm=serial_comm):
+def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs={'spin': 0, 'npts': 1001, 'width': 0.05},gap_thres=0.1, maximize_fw=False, comm=serial_comm):
     '''Placeholder for Zhang's projection method, which will be implemented in the future.'''
     if calc is None:
         calc = GPAW(f'{dir}/{seed}/{seed}-nscf-irred.gpw', txt=None, communicator=comm)
@@ -143,7 +143,11 @@ def Zhang_projection_method(K=1.2, dir="test", seed=None, calc=None, dos_kwargs=
     
     out_win = (Emin_0, emax_refined)
     frozen_win = (Emin_0, froz_max)'''
-    out_win, frozen_win = safety_check_windows(calc,nwann,(Emin_0, emax_refined),(Emin_0, e_fermi + 2))
+    e_froz_max_0 = e_fermi + 2
+    if maximize_fw:
+        e_froz_max_0 = emax_refined  # ensure frozen window is below outer window
+    print(f"before safety check: Outer window: {Emin_0} to {emax_refined} eV, Frozen window: {Emin_0} to {e_froz_max_0} eV")
+    out_win, frozen_win = safety_check_windows(calc,nwann,(Emin_0, emax_refined),(Emin_0, e_froz_max_0))
     #could do all checks in one kpoints loop, more efficient, but this is clearer for now
 
     print(f"Selected orbitals: {selected_orbitals}")
