@@ -182,6 +182,10 @@ def parse_args():
         help='Plane-wave energy cutoff in eV (default: 500)'
     )
     parser.add_argument(
+        '--maximize-fw', action='store_true', default=None, dest="maximize_fw",
+        help='Maximize the frozen window(default: False)'
+    )
+    parser.add_argument(
         '--gap-thres', type=float, default=None, dest="gap_thres",
         help='Minimum size of a gap to be considered as such in the initial window determination. Can be increased to include lower semi-core bands (default: 0.1 eV)'
     )
