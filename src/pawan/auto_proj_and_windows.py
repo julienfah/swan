@@ -14,6 +14,7 @@ from pawan.utils import safety_check_windows
 
 
 def get_proj_set(
+    calc = None,
     K=1.2,
     seed=None,
     dir="test",
@@ -23,7 +24,8 @@ def get_proj_set(
     objective_wd=None,
     comm=serial_comm,
 ):
-    calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+    if calc is None:
+        calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     selected_orbitals, outer_win, frozen_win, nwann = Zhang_projection_method(
         K=K,
         dir=dir,

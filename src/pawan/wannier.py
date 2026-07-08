@@ -11,6 +11,7 @@ def wannierize(
     frozen_win,
     seed,
     dir,
+    calc_nscf_irred=None,
     spin_channel=0,
     unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=2),
     wannierization_params=dict(
@@ -29,8 +30,8 @@ def wannierize(
     :param outer_win: Tuple containing the outer energy window boundaries.
     :param frozen_win: Tuple containing the frozen energy window boundaries.
     """
-
-    calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+    if calc_nscf_irred is None:
+        calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     wandata, bandstructure = WannierData.from_gpaw(
         calculator=calc_nscf_irred,
         spin_channel=spin_channel,
@@ -56,21 +57,22 @@ def wannierize(
             f.write(f"Center: {center}, Spread: {spread}\n")
 
 
-def interpolate_bands(seed, dir, npoints=200, comm=serial_comm):
+def interpolate_bands(seed, dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm):
     """
     Use of the Wannier functions to interpolate the bands.
     """
-    calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+    if calc_nscf_irred is None:
+        calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     atoms = calc_nscf_irred.atoms
     path = atoms.cell.bandpath()
-
-    wandata = WannierData.from_npz(
-        seedname=f"{dir}/{seed}/{seed}_wannier_data",
-        files=["amn", "mmn", "eig", "chk", "symmetrizer"],
-        ignore_missing_files=False,
-        irreducible=True,
+    if wannier_data is None:
+        wannier_data = WannierData.from_npz(
+            seedname=f"{dir}/{seed}/{seed}_wannier_data",
+            files=["amn", "mmn", "eig", "chk", "symmetrizer"],
+            ignore_missing_files=False,
+            irreducible=True,
     )
-
+    wandata = wannier_data
     system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
     kpoints = path.special_points  # dict of label: kcoords
