@@ -76,7 +76,7 @@ def adaptative_k_grid(atoms, nk_length=40, multiplier=1):
     return tuple(multiplier * NKdiv * NKFFT)
 
 
-def adaptative_high_sym_k_grid(atoms, nk_length=40, multiplier=1):
+def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1):
     """
     Creates a k-grid that fits the point group of the system that contains all high-symmetry points in the BZ, and is a multiple of the original one.
     """
@@ -102,6 +102,9 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40, multiplier=1):
     # select the one with the smallest product (fewest k-points)
     selected_grid = min(candidates, key=lambda x: np.prod(x))
     # print(f"Selected k-grid: {selected_grid}")
+    if kill_axis is not None:
+        selected_grid = list(selected_grid)
+        selected_grid[kill_axis] = 1  # for 2d materials, we can kill the axis perpendicular to the plane of the material
     return tuple(selected_grid)
 
 
@@ -182,11 +185,12 @@ def safety_check_windows(calc, nwann, outer_win, frozen_win):
     # ensure that there is no more than nwann bands in the frozen window for any k point
     froz_max = frozen_win[1]  # start with the provided frozen window max
     # froz_max = calc.get_homo_lumo()[1]+2  # bottom of conduction band if there is one
+    n_froz_target = ceil(nwann*0.75)
     for k_eigs in eigs:
         in_outer = k_eigs[(k_eigs >= emin_0) & (k_eigs <= emax_refined)]
         in_frozen = in_outer[(in_outer >= emin_0) & (in_outer <= froz_max)]
-        if len(in_frozen) > nwann:
-            froz_max = min(froz_max, in_frozen[nwann] - 0.01)
+        if len(in_frozen) > n_froz_target:
+            froz_max = min(froz_max, in_frozen[n_froz_target] - 0.01)
             print(f"Frozen window capped to {froz_max:.3f} eV (nfrozen must be < nwann={nwann})")
 
     # check if there is at least one band btw froz_max and emax_refined at any k point
@@ -211,6 +215,13 @@ def parse_args():
         dest="auto_nk_grid",
         help="Automatically determine the k-point grid based on the crystal structure. Overrides --nk if set",
     )
+    parser.add_argument(
+        "--kill-axis",
+        type=int,
+        default=None,
+        dest="kill_axis",
+        help="Axis to kill for 2D materials (0 for x, 1 for y, 2 for z). Overrides --auto-nk-grid over the specified axisif set",
+    )   
     parser.add_argument(
         "--nk", type=int, default=None, help="Number of k-points in each direction for SCF and NSCF calculations"
     )

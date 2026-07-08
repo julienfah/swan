@@ -16,16 +16,19 @@ from pawan.utils import (
 )
 
 
-def compute_nscf_kmesh(atoms, NKFFT_=1, NK_=12):  # correct??
+def compute_nscf_kmesh(atoms, NKFFT_=1, NK_=12, kill_axis=None):  # correct??
     pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
     periodic = np.array(atoms.pbc)
     NKdiv, NKFFT = determineNK(
         periodic=periodic, NKdiv=None, NKFFT=NKFFT_, NK=NK_, NKFFT_recommended=NKFFT_, pointgroup=pg
     )
-    return tuple(NKdiv * NKFFT)
+    ret = NKdiv * NKFFT
+    if kill_axis is not None:
+        ret[kill_axis] = 1  # for 2D materials, we can kill the axis perpendicular to the plane of the material
+    return tuple(ret)
 
 
-def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False):
+def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None):
     """
     Perform self-consistent field calculation for the given atoms.
 
@@ -41,7 +44,7 @@ def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=
 
     if auto_nk_grid:
         # if works well pass nk_length as param
-        kx, ky, kz = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1)
+        kx, ky, kz = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1,kill_axis=kill_axis)  # for 2D materials, we can kill the axis perpendicular to the plane of the material
     else:
         kx, ky, kz = compute_nscf_kmesh(atoms, NKFFT, NK)
     if world.rank == 0:
@@ -122,6 +125,7 @@ def full_dft_run(
     skip_scf=False,
     skip_nscf=False,
     auto_nk_grid=False,
+    kill_axis=None,
     nk=12,
     nkfft=1,
     ecut=500.0,
@@ -147,6 +151,7 @@ def full_dft_run(
             ecut=ecut,
             density_conv=density_conv_scf,
             auto_nk_grid=auto_nk_grid,
+            kill_axis=kill_axis,
         )
     n_bands = adaptative_nscf_nbands(
         seed=seed, dir=dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
