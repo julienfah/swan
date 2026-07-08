@@ -25,7 +25,6 @@ def extend_proj_set_with_next_wyckoff_position(calc, proj_set: ProjectionsSet):
     positions = calc.atoms.get_scaled_positions()
     numbers = calc.atoms.numbers
     lattice = (cell, positions, numbers)
-
     # Get the Wyckoff positions for the given lattice (in lattice coordinates)
     wps = SpaceGroup.wyckoff_positions(lattice)
     # Get the multiplicities of the Wyckoff positions
