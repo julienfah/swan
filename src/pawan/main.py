@@ -10,12 +10,12 @@ from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
 
 
-def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, dir):
+def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
     """
     Plot the interpolated bands and compares with the ones from the DFT calculation.
     """
     print("Plotting the bands to compare with DFT")
-    bs_dft = GPAW(f"{dir}/{seed}/{seed}-bands.gpw", communicator=serial_comm).band_structure()
+    bs_dft = GPAW(f"{in_dir}/{seed}/{seed}-bands.gpw", communicator=serial_comm).band_structure()
     # plot comparison
 
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -33,13 +33,14 @@ def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, dir):
     plt.axhspan(ymin=frozen_win[0], ymax=frozen_win[1], color="gray", alpha=0.3, label="frozen window")
     plt.legend(loc="upper right")
     plt.title(f"{seed} band structure")
-    plt.savefig(f"{dir}/{seed}/{seed}-wannierized_bands.png", dpi=200)
+    plt.savefig(f"{out_dir}/{seed}/{seed}-wannierized_bands.png", dpi=200)
 
 
 def auto_workflow(
     atoms,
     seed,
-    dir="test",
+    out_dir="test",
+    in_dir="test",
     auto_nk_grid=False,
     kill_axis=None,
     nk=12,
@@ -69,6 +70,7 @@ def auto_workflow(
     skip_scf=False,
     skip_nscf=False,
     skip_wannier=False,
+    hybridize_on_site=False,
 ):
     """if not skip_scf:
         scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
@@ -76,10 +78,13 @@ def auto_workflow(
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)"""
-
+    if in_dir !=out_dir:
+        skip_scf = True
+        skip_nscf = True
     full_dft_run(
         seed=seed,
-        dir=dir,
+        out_dir=out_dir,
+        in_dir=in_dir,
         atoms=atoms,
         skip_scf=skip_scf,
         skip_nscf=skip_nscf,
@@ -108,11 +113,13 @@ def auto_workflow(
         proj_set, outer_win, frozen_win, nwann = get_proj_set(
             K=K,
             seed=seed,
-            dir=dir,
+            out_dir=out_dir,
+            in_dir=in_dir,
             dos_kwargs=dos_kwargs,
             gap_thres=gap_thres,
             maximize_fw=maximize_fw,
             objective_wd=objective_wd,
+            hybridize_on_site=hybridize_on_site,
         )
 
         if not skip_wannier:
@@ -133,15 +140,16 @@ def auto_workflow(
                 outer_win=outer_win,
                 frozen_win=frozen_win,
                 seed=seed,
-                dir=dir,
+                out_dir=out_dir,
+                in_dir=in_dir,
                 spin_channel=spin_channel,
                 unitary_params=unitary_params,
                 wannierization_params=wannierization_params,
             )
 
-        bands_wannier, wb_path = interpolate_bands(seed=seed, dir=dir, npoints=npoints)
+        bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints)
 
-        plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed=seed, dir=dir)
+        plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed=seed, out_dir=out_dir, in_dir=in_dir)
 
 
 def main():
@@ -156,13 +164,20 @@ def main():
 
     seed = args.seed if args.seed is not None else atoms.get_chemical_formula()
     output_directory = args.output_dir if args.output_dir is not None else "test"
+    input_directory = args.input_dir if args.input_dir is not None else output_directory
 
     (Path_(output_directory) / Path_(f"{seed}")).mkdir(parents=True, exist_ok=True)
+    if not (Path_(input_directory) / Path_(f"{seed}")).exists():
+        raise FileNotFoundError(f"Input directory {Path_(input_directory) / Path_(f'{seed}')} does not exist.")
+    if not (Path_(output_directory) / Path_(f"{seed}")).exists():
+        raise FileNotFoundError(f"Input nscf file {Path_(f'{input_directory}/{seed}/{seed}-nscf-irred.gpw')} does not exist.")
+    if not (Path_(output_directory) / Path_(f"{seed}")).exists():
+        raise FileNotFoundError(f"Input dft bands file {Path_(f'{input_directory}/{seed}/{seed}-bands.gpw')} does not exist.")
 
     # build dicts from CLI args
-    cli_kwargs = {k: v for k, v in vars(args).items() if v is not None and k not in ["structure", "seed", "output_dir"]}
+    cli_kwargs = {k: v for k, v in vars(args).items() if v is not None and k not in ["structure", "seed", "output_dir", "input_dir"]}
 
-    auto_workflow(atoms, seed, dir=output_directory, **cli_kwargs)
+    auto_workflow(atoms, seed, in_dir=input_directory, out_dir=output_directory, **cli_kwargs)
 
 
 if __name__ == "__main__":

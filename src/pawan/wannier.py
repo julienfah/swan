@@ -10,7 +10,8 @@ def wannierize(
     outer_win,
     frozen_win,
     seed,
-    dir,
+    out_dir,
+    in_dir,
     calc_nscf_irred=None,
     spin_channel=0,
     unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=2),
@@ -31,7 +32,7 @@ def wannierize(
     :param frozen_win: Tuple containing the frozen energy window boundaries.
     """
     if calc_nscf_irred is None:
-        calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+        calc_nscf_irred = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     wandata, bandstructure = WannierData.from_gpaw(
         calculator=calc_nscf_irred,
         spin_channel=spin_channel,
@@ -41,7 +42,7 @@ def wannierize(
         unitary_params=unitary_params,
         return_bandstructure=True,
     )
-    wandata.to_npz(f"{dir}/{seed}/{seed}_wannier_data")
+    wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
 
     wandata.wannierise(
         froz_min=frozen_win[0],
@@ -50,24 +51,24 @@ def wannierize(
         outer_max=outer_win[1],  # np.inf,#
         **wannierization_params,
     )
-    wandata.chk.to_npz(f"{dir}/{seed}/{seed}_wannier_data.chk.npz")
+    wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
     # log spreads
-    with open(f"{dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
+    with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
             f.write(f"Center: {center}, Spread: {spread}\n")
 
 
-def interpolate_bands(seed, dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm):
+def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm):
     """
     Use of the Wannier functions to interpolate the bands.
     """
     if calc_nscf_irred is None:
-        calc_nscf_irred = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+        calc_nscf_irred = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     atoms = calc_nscf_irred.atoms
     path = atoms.cell.bandpath()
     if wannier_data is None:
         wannier_data = WannierData.from_npz(
-            seedname=f"{dir}/{seed}/{seed}_wannier_data",
+            seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
             files=["amn", "mmn", "eig", "chk", "symmetrizer"],
             ignore_missing_files=False,
             irreducible=True,

@@ -28,7 +28,7 @@ def compute_nscf_kmesh(atoms, NKFFT_=1, NK_=12, kill_axis=None):  # correct??
     return tuple(ret)
 
 
-def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None):
+def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None):
     """
     Perform self-consistent field calculation for the given atoms.
 
@@ -36,7 +36,7 @@ def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=
     :param seed: Seed name for output files.
     """
     if world.rank == 0:
-        print(f"Running SCF calculation for {seed} in directory {dir}")
+        print(f"Running SCF calculation for {seed} in directory {out_dir}")
     if atoms is None:
         if input_file is None:
             raise ValueError("Either atoms or input_file must be provided.")
@@ -56,7 +56,7 @@ def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=
         kpts={"size": grid, "gamma": True},
         convergence={"density": density_conv},
         mixer=MixerSum(0.25, 8, 100),
-        txt=f"{dir}/{seed}/{seed}-scf.txt",
+        txt=f"{out_dir}/{seed}/{seed}-scf.txt",
     )
     corrected_grid = adaptative_g_grid(calc, atoms)
     if corrected_grid is not None:
@@ -67,20 +67,21 @@ def scf(seed, dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=
             gpts=corrected_grid,
             convergence={"density": density_conv},
             mixer=MixerSum(0.25, 8, 100),
-            txt=f"{dir}/{seed}/{seed}-scf.txt",
+            txt=f"{out_dir}/{seed}/{seed}-scf.txt",
         )
     atoms.calc = calc
     atoms.get_potential_energy()
-    calc.write(f"{dir}/{seed}/{seed}-scf.gpw", mode="all")
+    calc.write(f"{out_dir}/{seed}/{seed}-scf.gpw", mode="all")
 
 
-def nscf(seed, dir, nbands=40, unconverged_bands=2, NK=12, NKFFT=1):
+def nscf(seed, out_dir, in_dir,calc=None, nbands=40, unconverged_bands=2, NK=12, NKFFT=1):
     """
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.
     """
     if world.rank == 0:
-        print(f"Running NSCF calculation for {seed} in directory {dir}")
-    calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw", txt=None)
+        print(f"Running NSCF calculation for {seed} in directory {out_dir}")
+    if calc is None:
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-scf.gpw", txt=None)
     nscf_grid = compute_nscf_kmesh(calc.atoms, NKFFT, NK)
     space_group = SpaceGroup.from_gpaw(calc)
     irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
@@ -89,20 +90,21 @@ def nscf(seed, dir, nbands=40, unconverged_bands=2, NK=12, NKFFT=1):
         kpts=irred_k_points,
         nbands=nbands,
         convergence={"bands": nbands - unconverged_bands},
-        txt=f"{dir}/{seed}/{seed}-nscf-irred.txt",
+        txt=f"{out_dir}/{seed}/{seed}-nscf-irred.txt",
     )
-    calc_nscf_irred.write(f"{dir}/{seed}/{seed}-nscf-irred.gpw", mode="all")
+    calc_nscf_irred.write(f"{out_dir}/{seed}/{seed}-nscf-irred.gpw", mode="all")
 
 
-def dft_bands(seed, dir, dft_nbands=14, npoints=100):
+def dft_bands(seed, in_dir,out_dir,calc=None ,dft_nbands=14, npoints=100):
     """
     Compute the band structure directly from the DFT calculation for comparison with the Wannier-interpolated bands.
     """
-    if Path(f"{dir}/{seed}/{seed}-bands.gpw").exists():
+    if Path(f"{in_dir}/{seed}/{seed}-bands.gpw").exists():
         if world.rank == 0:
             print(f"DFT bands already computed for {seed}. Skipping.")
         return
-    calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
+    if calc is None:
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-scf.gpw")
     # compute the band directly from gpaw for comparison
     atoms = calc.atoms
     path = atoms.cell.bandpath(npoints=npoints)
@@ -112,14 +114,15 @@ def dft_bands(seed, dir, dft_nbands=14, npoints=100):
         symmetry="off",
         kpts=path,  # {'path': list(path.values()), 'npoints': 100},
         convergence={"bands": dft_nbands - 2},
-        txt=f"{dir}/{seed}/{seed}-bands.txt",
+        txt=f"{out_dir}/{seed}/{seed}-bands.txt",
     )
-    dft_calc_bands.write(f"{dir}/{seed}/{seed}-bands.gpw", mode="all")
+    dft_calc_bands.write(f"{out_dir}/{seed}/{seed}-bands.gpw", mode="all")
 
 
 def full_dft_run(
     seed,
-    dir,
+    out_dir,
+    in_dir,
     atoms=None,
     input_file=None,
     skip_scf=False,
@@ -145,7 +148,7 @@ def full_dft_run(
             atoms=atoms,
             input_file=input_file,
             seed=seed,
-            dir=dir,
+            out_dir=out_dir,
             NK=nk,
             NKFFT=nkfft,
             ecut=ecut,
@@ -154,9 +157,9 @@ def full_dft_run(
             kill_axis=kill_axis,
         )
     n_bands = adaptative_nscf_nbands(
-        seed=seed, dir=dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
+        seed=seed,dir=in_dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
     )
     if not skip_nscf:
-        nscf(nbands=n_bands, unconverged_bands=unconverged_bands, seed=seed, dir=dir, NK=nk, NKFFT=nkfft)
+        nscf(nbands=n_bands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, NK=nk, NKFFT=nkfft)
     dft_nbands = n_bands if dft_plot_nbands is None else dft_plot_nbands
-    dft_bands(seed=seed, dir=dir, dft_nbands=dft_nbands, npoints=npoints)
+    dft_bands(seed=seed, in_dir=in_dir, out_dir=out_dir, dft_nbands=dft_nbands, npoints=npoints)

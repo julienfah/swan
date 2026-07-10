@@ -380,5 +380,14 @@ def parse_args():
     parser.add_argument(
         "--output-dir", default=None, dest="output_dir", help="Directory for output files (default: test)"
     )
-
+    parser.add_argument(
+        "--input-dir", default=None, dest="input_dir", help="Directory for input dft files : skips SCF and NSCF and wannierizes using existing files in dir. (default: test)"
+    )
+    parser.add_argument(
+        "--hybridize-on-site",
+        action="store_true",
+        default=None,
+        dest="hybridize_on_site",
+        help="Try to hybridize orbitals on atomic sites, if possible (default: False)",
+    )
     return parser.parse_args()

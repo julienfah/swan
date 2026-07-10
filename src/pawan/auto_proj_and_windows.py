@@ -11,24 +11,28 @@ from gpaw.mpi import serial_comm, world
 
 from pawan.extend_proj_set import extend_to_energy_window
 from pawan.utils import safety_check_windows
+from pawan.hybridize import hybridize_orbitals
 
 
 def get_proj_set(
     calc = None,
     K=1.2,
     seed=None,
-    dir="test",
+    out_dir="test",
+    in_dir="test",
     dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05},
     gap_thres=0.1,
     maximize_fw=False,
     objective_wd=None,
+    hybridize_on_site=False,
     comm=serial_comm,
 ):
     if calc is None:
-        calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     selected_orbitals, outer_win, frozen_win, nwann = Zhang_projection_method(
         K=K,
-        dir=dir,
+        out_dir=out_dir,
+        in_dir=in_dir,
         seed=seed,
         calc=calc,
         dos_kwargs=dos_kwargs,
@@ -37,7 +41,16 @@ def get_proj_set(
         objective_wd=objective_wd,
         comm=comm,
     )
-
+    if hybridize_on_site:
+        #perform hybridization for each atom
+        selected_orbitals_l_list = defaultdict(list) #convert to list of {iatom : list of all l values of iatom}
+        hybrydized_orbitals = [] 
+        for i, (n,l) in selected_orbitals:
+            selected_orbitals_l_list[i].append(l)
+        for i, l_list in selected_orbitals_l_list.items():
+            selected_hybridized_orbitals = hybridize_orbitals(calc.atoms, calc.atoms.positions[i], orbitals=l_list)
+            hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
+        selected_orbitals = hybrydized_orbitals
     space_group = SpaceGroup.from_gpaw(calc)
 
     projs = []
@@ -69,7 +82,7 @@ def get_proj_set(
         )
 
     # log the selected orbitals and the windows
-    log_file_path = Path_(f"{dir}/{seed}/orbitals_and_windows.txt")
+    log_file_path = Path_(f"{out_dir}/{seed}/orbitals_and_windows.txt")
     with open(log_file_path, "w") as f:
         f.write(
             f"Selected orbitals (atom symbol, atom index, orbital): {[(calc.atoms[i].symbol, i, l) for i, (n, l) in selected_orbitals]},\n"
@@ -85,7 +98,8 @@ def get_proj_set(
 
 def Zhang_projection_method(
     K=1.2,
-    dir="test",
+    out_dir="test",
+    in_dir="test",
     seed=None,
     calc=None,
     dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05},
@@ -96,7 +110,7 @@ def Zhang_projection_method(
 ):
     """Placeholder for Zhang's projection method, which will be implemented in the future."""
     if calc is None:
-        calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(**dos_kwargs)
 
@@ -106,10 +120,10 @@ def Zhang_projection_method(
     alpha_max = {l: 2 * l_num[l] + 1 for l in l_conversion.values()}  # 100% threshold
 
     Emin_0, Emax_0, pdos, candidates = initial_DOS_energy_scan(
-        calc=calc, dir=dir, seed=seed, dos_kwargs=dos_kwargs, gap_thres=gap_thres
+        calc=calc, out_dir=out_dir, in_dir=in_dir, seed=seed, dos_kwargs=dos_kwargs, gap_thres=gap_thres
     )
     if objective_wd is not None:
-        Emin_0, Emax_0 = min(objective_wd[0], Emin_0), max(objective_wd[1], Emax_0)  # override with user-defined window
+        Emin_0, Emax_0 = objective_wd[0], max(objective_wd[1], Emax_0)  # override with user-defined window
     print(f"Initial outer window: {Emin_0} to {Emax_0} eV")
     print(f"Candidates for projections: {candidates}")
     # then integrate each orbital's pDOS and compare with occupation tolerance alpha
@@ -196,14 +210,15 @@ def Zhang_projection_method(
 
 def initial_DOS_energy_scan(
     calc=None,
-    dir="test",
+    out_dir="test",
+    in_dir="test",
     seed=None,
     dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05},
     gap_thres=0.1,
     comm=serial_comm,
 ):
     if calc is None:
-        calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(**dos_kwargs)
     print(f"Fermi level: {e_fermi} eV")
@@ -242,7 +257,7 @@ def initial_DOS_energy_scan(
     plt.xlabel("DOS (states/eV)")
     plt.title(f"DOS and PDOS for {seed}")
     plt.legend()
-    plt.savefig(f"{dir}/{seed}/{seed}-dos_pdos.png", dpi=200)
+    plt.savefig(f"{out_dir}/{seed}/{seed}-dos_pdos.png", dpi=200)
     plt.close()
     # analyze energy ranges where candidate PDOS is non-zero
     emin_list, emax_list = [], []
