@@ -8,6 +8,7 @@ from pawan.utils import parse_args, standardize_cell
 from pawan.dft import full_dft_run
 from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
+from pawan.metrics import least_square_deviation_within_frozen
 
 
 def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
@@ -34,6 +35,10 @@ def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_d
     plt.legend(loc="upper right")
     plt.title(f"{seed} band structure")
     plt.savefig(f"{out_dir}/{seed}/{seed}-wannierized_bands.png", dpi=200)
+    #log least square deviation
+    with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "a") as f:
+        #f.write(f"least square deviation: {least_square_deviation(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), outer_win)}\n")
+        f.write(f"least_square_deviation_within_frozen: {least_square_deviation_within_frozen(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), outer_win, frozen_win)}\n")
 
 
 def auto_workflow(
@@ -70,6 +75,8 @@ def auto_workflow(
     skip_scf=False,
     skip_nscf=False,
     skip_wannier=False,
+    only_dft=False,
+    only_wannier=False,
     hybridize_on_site=False,
 ):
     """if not skip_scf:
@@ -78,78 +85,79 @@ def auto_workflow(
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)"""
-    if in_dir !=out_dir:
-        skip_scf = True
-        skip_nscf = True
-    full_dft_run(
-        seed=seed,
-        out_dir=out_dir,
-        in_dir=in_dir,
-        atoms=atoms,
-        skip_scf=skip_scf,
-        skip_nscf=skip_nscf,
-        auto_nk_grid=auto_nk_grid,
-        kill_axis=kill_axis,
-        nk=nk,
-        nkfft=nkfft,
-        ecut=ecut,
-        density_conv_scf=density_conv_scf,
-        nbands_per_valence_el=nbands_per_valence_el,
-        nbands_per_atom=nbands_per_atom,
-        nbands=nbands,
-        unconverged_bands=unconverged_bands,
-        npoints=npoints,
-        dft_plot_nbands=dft_plot_nbands,
-    )
-    world.barrier()
-
-    if world.rank == 0:
-        # import ray
-        # ray.init(num_cpus=16,num_gpus=18,ignore_reinit_error=True)
-
-        print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
-        dos_kwargs = {"spin": spin_channel, "npts": npts_dos, "width": dos_width}
-
-        proj_set, outer_win, frozen_win, nwann = get_proj_set(
-            K=K,
+    if not only_wannier:
+        if in_dir !=out_dir:
+            skip_scf = True
+            skip_nscf = True
+        full_dft_run(
             seed=seed,
             out_dir=out_dir,
             in_dir=in_dir,
-            dos_kwargs=dos_kwargs,
-            gap_thres=gap_thres,
-            maximize_fw=maximize_fw,
-            objective_wd=objective_wd,
-            hybridize_on_site=hybridize_on_site,
+            atoms=atoms,
+            skip_scf=skip_scf,
+            skip_nscf=skip_nscf,
+            auto_nk_grid=auto_nk_grid,
+            kill_axis=kill_axis,
+            nk=nk,
+            nkfft=nkfft,
+            ecut=ecut,
+            density_conv_scf=density_conv_scf,
+            nbands_per_valence_el=nbands_per_valence_el,
+            nbands_per_atom=nbands_per_atom,
+            nbands=nbands,
+            unconverged_bands=unconverged_bands,
+            npoints=npoints,
+            dft_plot_nbands=dft_plot_nbands,
         )
+        world.barrier()
+    if not only_dft:
+        if world.rank == 0:
+            # import ray
+            # ray.init(num_cpus=16,num_gpus=18,ignore_reinit_error=True)
 
-        if not skip_wannier:
-            unitary_params = dict(
-                error_threshold=error_threshold,
-                warning_threshold=warning_threshold,
-                nbands_upper_skip=unconverged_bands,
-            )
-            wannierization_params = dict(
-                num_iter=num_iter,
-                conv_tol=w_conv_tol,
-                print_progress_every=print_progress_every,
-                sitesym=not no_sitesym,
-                localise=not no_localise,
-            )
-            wannierize(
-                proj_set=proj_set,
-                outer_win=outer_win,
-                frozen_win=frozen_win,
+            print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
+            dos_kwargs = {"spin": spin_channel, "npts": npts_dos, "width": dos_width}
+
+            proj_set, outer_win, frozen_win, nwann = get_proj_set(
+                K=K,
                 seed=seed,
                 out_dir=out_dir,
                 in_dir=in_dir,
-                spin_channel=spin_channel,
-                unitary_params=unitary_params,
-                wannierization_params=wannierization_params,
+                dos_kwargs=dos_kwargs,
+                gap_thres=gap_thres,
+                maximize_fw=maximize_fw,
+                objective_wd=objective_wd,
+                hybridize_on_site=hybridize_on_site,
             )
 
-        bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints)
+            if not skip_wannier:
+                unitary_params = dict(
+                    error_threshold=error_threshold,
+                    warning_threshold=warning_threshold,
+                    nbands_upper_skip=unconverged_bands,
+                )
+                wannierization_params = dict(
+                    num_iter=num_iter,
+                    conv_tol=w_conv_tol,
+                    print_progress_every=print_progress_every,
+                    sitesym=not no_sitesym,
+                    localise=not no_localise,
+                )
+                wannierize(
+                    proj_set=proj_set,
+                    outer_win=outer_win,
+                    frozen_win=frozen_win,
+                    seed=seed,
+                    out_dir=out_dir,
+                    in_dir=in_dir,
+                    spin_channel=spin_channel,
+                    unitary_params=unitary_params,
+                    wannierization_params=wannierization_params,
+                )
 
-        plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed=seed, out_dir=out_dir, in_dir=in_dir)
+            bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints)
+
+            plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed=seed, out_dir=out_dir, in_dir=in_dir)
 
 
 def main():

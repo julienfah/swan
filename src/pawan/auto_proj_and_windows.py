@@ -44,7 +44,7 @@ def get_proj_set(
     if hybridize_on_site:
         #perform hybridization for each atom
         selected_orbitals_l_list = defaultdict(list) #convert to list of {iatom : list of all l values of iatom}
-        hybrydized_orbitals = [] 
+        hybrydized_orbitals = []
         for i, (n,l) in selected_orbitals:
             selected_orbitals_l_list[i].append(l)
         for i, l_list in selected_orbitals_l_list.items():
@@ -243,7 +243,7 @@ def initial_DOS_energy_scan(
     for iatom in range(len(calc.atoms)):
         for i, nl in candidates:
             if iatom == i and (iatom, nl[1]) not in pdos:
-                e, dos = calc.get_orbital_ldos(a=iatom, angular=nl[1], npts=1001, width=0.05)
+                e, dos = calc.get_orbital_ldos(a=iatom, angular=nl[1], **dos_kwargs)
                 pdos[(iatom, nl[1])] = dos
     # plot the total DOS and the PDOS for each candidate orbital
     import matplotlib.pyplot as plt
@@ -251,9 +251,12 @@ def initial_DOS_energy_scan(
     plt.figure(figsize=(6, 6))
     plt.plot(dos_total, energies, label="Total DOS", color="black", linewidth=2)
     for (iatom, l), dos in pdos.items():
+        #if iatom == 0:  # only plot for the first atom of each species to avoid clutter
         plt.plot(dos, energies, label=f"{calc.atoms[iatom].symbol}, l={l}", alpha=0.7)
     plt.axhline(e_fermi, color="red", linestyle="--", label="Fermi level")
     plt.ylabel("Energy (eV)")
+    #plt.ylim(0,37)
+    #plt.xlim(0, 5)
     plt.xlabel("DOS (states/eV)")
     plt.title(f"DOS and PDOS for {seed}")
     plt.legend()

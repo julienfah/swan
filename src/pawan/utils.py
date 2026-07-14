@@ -9,6 +9,7 @@ from wannierberri.symmetry.point_symmetry import PointGroup
 from wannierberri.grid.grid import iterate_vector
 from wannierberri.grid.grid import determineNK
 from ase import Atoms
+import warnings
 
 
 def get_crystal_system(atoms):
@@ -100,7 +101,13 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1)
         if pg.symmetric_grid(i) and np.all(i % multiples == 0)
     ]
     # select the one with the smallest product (fewest k-points)
-    selected_grid = min(candidates, key=lambda x: np.prod(x))
+    if candidates:
+        selected_grid = min(candidates, key=lambda x: np.prod(x))
+    else:
+        warnings.warn(
+            "No compatible k-grid found that contains all special points. Using the automatically determined k-grid."
+        )
+        selected_grid = point_group_grid
     # print(f"Selected k-grid: {selected_grid}")
     if kill_axis is not None:
         selected_grid = list(selected_grid)
@@ -221,7 +228,7 @@ def parse_args():
         default=None,
         dest="kill_axis",
         help="Axis to kill for 2D materials (0 for x, 1 for y, 2 for z). Overrides --auto-nk-grid over the specified axisif set",
-    )   
+    )
     parser.add_argument(
         "--nk", type=int, default=None, help="Number of k-points in each direction for SCF and NSCF calculations"
     )
@@ -369,6 +376,12 @@ def parse_args():
     )
     parser.add_argument(
         "--skip-nscf", action="store_true", default=None, dest="skip_nscf", help="Skip NSCF if .gpw file already exists"
+    )
+    parser.add_argument(
+        "--only-dft", action="store_true", default=None, dest="only_dft", help="Only run DFT calculations, skip Wannierization"
+    )
+    parser.add_argument(
+        "--only-wannier", action="store_true", default=None, dest="only_wannier", help="Only run Wannierization, skip DFT calculations"
     )
     parser.add_argument(
         "--skip-wannier",

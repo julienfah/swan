@@ -84,7 +84,7 @@ def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=N
         real_lattice=system.real_lattice,
         nodes=[kpoints[label] for label in path_labels],
         labels=list(path_labels),
-        length=npoints,
+        nk=int(npoints/(len(path_labels) - 1)),
     )
 
     bands_wannier = evaluate_k_path(system, path=wb_path)
