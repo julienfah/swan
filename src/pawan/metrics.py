@@ -9,11 +9,11 @@ def least_square_deviation(dft_eig_energies,k_dft, wannier_interpolated_energies
     y_true = y_true[0]#(npoints, nbands),
     y_pred = np.asarray(wannier_interpolated_energies) #(npoints, nwann), nwann < nbands
     #restrict to outer window
-    print(f"y_true shape: {y_true.shape}, y_pred shape: {y_pred.shape}")
+    #print(f"y_true shape: {y_true.shape}, y_pred shape: {y_pred.shape}")
     mask = np.any((y_true >= outer_win[0]) & (y_true <= outer_win[1]), axis=0)
     y_true = y_true[:, mask]
 
-    print(f"y_true shape: {y_true.shape}, y_pred shape: {y_pred.shape}")
+    #print(f"y_true shape: {y_true.shape}, y_pred shape: {y_pred.shape}")
     # Compare only the common number of bands
     nbands = min(y_true.shape[1], y_pred.shape[1])
     y_true = y_true[:, :nbands]
@@ -55,7 +55,7 @@ def least_square_deviation_within_frozen(dft_eig_energies,k_dft, wannier_interpo
     Compute the Sigma metric from Zhang's paper within the frozen energy window, which is the least square deviation between DFT eigenvalues and Wannier interpolated eigenvalues.
     """
     mask = np.any((dft_eig_energies >= frozen_win[0]) & (dft_eig_energies <= frozen_win[1]), axis=(0, 1))
-    print(mask.shape)
-    print(dft_eig_energies.shape)
+    #print(mask.shape)
+    #print(dft_eig_energies.shape)
     dft_eig_frozen = dft_eig_energies[:,:,mask]
     return least_square_deviation(dft_eig_frozen, k_dft, wannier_interpolated_energies, k_wannier, outer_win)

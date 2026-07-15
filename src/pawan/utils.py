@@ -277,11 +277,11 @@ def parse_args():
         help="Number of bands per valence electron for NSCF calculation (default: 5)",
     )
     parser.add_argument(
-        "--unconverged-bands",
+        "--unconverged-bands-prc",
         type=int,
         default=None,
-        dest="unconverged_bands",
-        help="Number of unconverged bands for NSCF calculation (default: 2)",
+        dest="unconverged_bands_prc",
+        help="Percentage of unconverged bands for NSCF calculation (default: 5)",
     )
     parser.add_argument(
         "--dft-plot-nbands",

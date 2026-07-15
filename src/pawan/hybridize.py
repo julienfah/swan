@@ -1,13 +1,7 @@
-import spglib
-from molsym.symtext.point_group import PointGroup
-from molsym.symtext.general_irrep_mats import pg_to_symels
-from molsym.symtext.symtext_helper import get_atom_mapping
-from molsym.symtext.multiplication_table import build_mult_table
 from molsym.symtext.symtext import Symtext
 from molsym.molecule import Molecule
 import molsym
-import warnings 
-from gpaw import GPAW
+import warnings
 import numpy as np
 from ase.neighborlist import NeighborList,natural_cutoffs
 from ase.data import atomic_masses,atomic_numbers
@@ -88,8 +82,20 @@ def hybridize(atoms,position):
     cluster_coords, cluster_symbols = get_cluster_crystalnn(AseAtomsAdaptor.get_structure(atoms), np.where(np.all(np.isclose(atoms.get_positions(), position, atol=1e-5), axis=1))[0][0])
     masses = [atomic_masses[atomic_numbers[symbol]] for symbol in cluster_symbols]
     mol = Molecule(atoms=cluster_symbols, coords=cluster_coords, masses=masses)
-    #print(molsym.find_point_group(mol))
-    #print(len(cluster_symbols) - 1, cluster_symbols[1:], [np.linalg.norm(c) for c in cluster_coords[1:]])
+    pg_str, _ = molsym.find_point_group(mol)
+    print(pg_str)
+    print(len(cluster_symbols) - 1, cluster_symbols[1:], [np.linalg.norm(c) for c in cluster_coords[1:]])
+
+    n_neighbors = len(cluster_symbols) - 1
+    if n_neighbors < 2:
+        warnings.warn(f"{cluster_symbols[0]} at {position} has {n_neighbors} neighbor(s) — "
+                       f"hybridization undefined for a single bond direction; "
+                       f"using unhybridized orbitals.")
+        return []
+    if pg_str.startswith(("C0v", "D0h")):   # MolSym's linear-group labels
+        # linear site: real hybridization exists (sp for 2 collinear bonds),
+        # but Symtext.from_molecule crashes on it (mult_table=None bug) — build by hand
+        return handle_linear_site(pg_str)
     symtext = Symtext.from_molecule(mol)
     ic_coords = [ [0,i] for i in range(1, len(cluster_symbols)) ]#define coords as bonds between central atom and neigbors
 
@@ -116,12 +122,12 @@ def hybridize(atoms,position):
         decomp = decompose_shell(symtext, l)
         for irrep, count in decomp.items():
             l_irrep_map[irrep].append(l)
-    #print(l_irrep_map)        
+    #print(l_irrep_map)
     for label, count in get_salc_irreps(salcs.salcs).items():
         l_list = l_irrep_map[label]
         l_count = [l_count[i] + l_list.count(i) * count for i in range(3)]
-    #print(f"\nTotal l counts: {l_count}")   
-        
+    #print(f"\nTotal l counts: {l_count}")
+
     irrep_dim = {irrep.symbol: irrep.d for irrep in symtext.irreps}
 
     # how many *blocks* of each irrep the bonds actually need
@@ -159,7 +165,7 @@ def hybridize(atoms,position):
         name = NAME_BY_COUNTS.get(counts)
         if name:
             supported_hybrids.append(name)
-    
+
     #raise NotImplementedError("Hybridization of orbitals is not implemented yet.")
     return supported_hybrids
 
@@ -184,9 +190,9 @@ def hybridize_orbitals(atoms, position, orbitals):
     }
     filtered_hybrids = [h for h in supported_hybrids if HYBRID_SHELLS[h] <= set(orbitals)]
     HYBRID_LEFTOVER = {
-        "sp2": "pz",      
-        "sp": "p2",       
-        "sp3d2": "t2g",   
+        "sp2": "pz",
+        "sp": "p2",
+        "sp3d2": "t2g",
     }
     print(f"Filtered hybrids based on requested orbitals: {filtered_hybrids}")
     leftover_hybrids = []
@@ -261,11 +267,42 @@ def shell_character(R, l):
     theta = np.arccos(np.clip(cos_theta, -1, 1))
     base = (2*l + 1) if np.isclose(theta, 0) else np.sin((2*l+1)*theta/2) / np.sin(theta/2)
     return base if det > 0 else ((-1)**l) * base
-def decompose_shell(symtext, l):
+"""def decompose_shell(symtext, l):
     class_reps = [symtext.symels[symtext.symel_to_class_map.index(c)] for c in range(len(symtext.classes))]
     chars = np.array([shell_character(s.rrep, l) for s in class_reps])
     mults = symtext.reduction_coefficients(chars)
-    return {irrep.symbol: m for irrep, m in zip(symtext.irreps, mults) if m > 0}
+    return {irrep.symbol: m for irrep, m in zip(symtext.irreps, mults) if m > 0}"""
+def decompose_shell(symtext, l):
+    class_reps = [symtext.symels[symtext.symel_to_class_map.index(c)] for c in range(len(symtext.classes))]
+    chars = np.array([shell_character(s.rrep, l) for s in class_reps])
+
+    mults = np.zeros(len(symtext.irreps), dtype=int)
+    for irrep_idx, irrep in enumerate(symtext.irreps):
+        p = np.multiply(chars, symtext.class_orders)
+        p = np.multiply(p, symtext.character_table[irrep_idx, :])
+        raw = p.sum() / symtext.order
+        assert abs(raw.imag) < 1e-6, (
+            f"l={l}, irrep={irrep.symbol}: non-negligible imaginary part {raw.imag} "
+            f"in reduction coefficient — real decomposition bug, not just rounding"
+        )
+        mults[irrep_idx] = round(raw.real)
+
+    result = {irrep.symbol: m for irrep, m in zip(symtext.irreps, mults) if m > 0}
+    total_dim = sum(m * irrep.d for m, irrep in zip(mults, symtext.irreps))
+    assert total_dim == 2*l + 1, f"l={l} decomposition has dimension {total_dim}, expected {2*l+1}"
+    return result
+def handle_linear_site(pg_str):
+    """
+    Fallback for linear 2-neighbor site (failed in MolSym).
+    Dinfh (two identical neighbors, e.g. O between two equivalent Re)  -> sp
+    Cinfv (two different neighbors, asymmetric)                        -> no shared hybrid
+    """
+    if pg_str.startswith("D"):
+        return ["sp"]
+    else:
+        warnings.warn("C∞v site — asymmetric linear bonding, no shared hybrid; "
+                       "using unhybridized orbitals.")
+        return []
 #test
 
 #calc = GPAW("test/ClNa/ClNa-nscf-irred.gpw", txt=None)
@@ -291,3 +328,33 @@ for i, l_list in selected_orbitals_l_list.items():
     hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
 print(f"Selected orbitals: {selected_orbitals}")
 print(f"Hybridized orbitals: {hybrydized_orbitals}")"""
+
+"""from itertools import permutations
+
+def reference_lobes(hybrid_name):
+    lobes = orbitals_sets_dic[hybrid_name]
+    directions = []
+    for lobe in lobes:
+        coef = hybrids_coef[lobe]
+        d = np.array([coef.get("px", 0), coef.get("py", 0), coef.get("pz", 0)])
+        directions.append(d / np.linalg.norm(d))
+    return np.array(directions)
+
+def fit_orientation(hybrid_name, lobe_directions):
+    ref = reference_lobes(hybrid_name)
+    best = None
+    for perm in permutations(range(len(ref))):
+        A = lobe_directions[list(perm)]
+        H = ref.T @ A
+        U, S, Vt = np.linalg.svd(H)
+        d = np.sign(np.linalg.det(Vt.T @ U.T))
+        R = Vt.T @ np.diag([1, 1, d]) @ U.T
+        rmsd = np.linalg.norm(ref @ R.T - A)
+        if best is None or rmsd < best[0]:
+            best = (rmsd, R, perm)
+    rmsd, R, perm = best
+    return R @ np.array([0, 0, 1]), R @ np.array([1, 0, 0]), rmsd
+
+lobe_directions = np.array([symtext.reverse_rotate @ d for d in lobe_directions_symtext])
+zaxis, xaxis, rmsd = fit_orientation("sp3", lobe_directions)
+"""

@@ -10,7 +10,6 @@ from gpaw.mpi import world
 
 from pawan.utils import (
     adaptative_g_grid,
-    adaptative_nscf_nbands,
     standardize_cell,
     adaptative_high_sym_k_grid,
 )
@@ -133,9 +132,7 @@ def full_dft_run(
     nkfft=1,
     ecut=500.0,
     density_conv_scf=1e-7,
-    nbands_per_valence_el=4,
-    nbands_per_atom=None,
-    nbands=None,
+    nbands=18,
     unconverged_bands=2,
     npoints=100,
     dft_plot_nbands=None,
@@ -156,10 +153,8 @@ def full_dft_run(
             auto_nk_grid=auto_nk_grid,
             kill_axis=kill_axis,
         )
-    n_bands = adaptative_nscf_nbands(
-        seed=seed,dir=in_dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
-    )
+
     if not skip_nscf:
-        nscf(nbands=n_bands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, NK=nk, NKFFT=nkfft)
-    dft_nbands = n_bands if dft_plot_nbands is None else dft_plot_nbands
+        nscf(nbands=nbands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, NK=nk, NKFFT=nkfft)
+    dft_nbands = nbands if dft_plot_nbands is None else dft_plot_nbands
     dft_bands(seed=seed, in_dir=in_dir, out_dir=out_dir, dft_nbands=dft_nbands, npoints=npoints)

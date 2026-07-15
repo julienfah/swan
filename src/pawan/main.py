@@ -4,7 +4,7 @@ from pathlib import Path as Path_
 from ase.io import read
 from gpaw.mpi import world, serial_comm
 
-from pawan.utils import parse_args, standardize_cell
+from pawan.utils import parse_args, standardize_cell,adaptative_nscf_nbands
 from pawan.dft import full_dft_run
 from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
@@ -56,7 +56,7 @@ def auto_workflow(
     nbands_per_valence_el=5,
     nbands_per_atom=None,
     nbands=None,
-    unconverged_bands=2,
+    unconverged_bands_prc=5,
     npoints=200,
     dft_plot_nbands=None,
     K=1.2,
@@ -85,6 +85,10 @@ def auto_workflow(
     n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)"""
+    n_bands = adaptative_nscf_nbands(
+        seed=seed,dir=in_dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
+    )
+    unconverged_bands = max(2, int(n_bands * unconverged_bands_prc / 100))
     if not only_wannier:
         if in_dir !=out_dir:
             skip_scf = True
@@ -102,9 +106,7 @@ def auto_workflow(
             nkfft=nkfft,
             ecut=ecut,
             density_conv_scf=density_conv_scf,
-            nbands_per_valence_el=nbands_per_valence_el,
-            nbands_per_atom=nbands_per_atom,
-            nbands=nbands,
+            nbands=n_bands,
             unconverged_bands=unconverged_bands,
             npoints=npoints,
             dft_plot_nbands=dft_plot_nbands,
