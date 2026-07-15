@@ -86,7 +86,7 @@ def auto_workflow(
     if not skip_nscf:
         nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)"""
     n_bands = adaptative_nscf_nbands(
-        seed=seed,dir=in_dir, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
+        seed=seed,dir=in_dir, atoms=atoms, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
     )
     unconverged_bands = max(2, int(n_bands * unconverged_bands_prc / 100))
     if not only_wannier:

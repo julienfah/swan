@@ -43,17 +43,21 @@ def standardize_cell(atoms):
 
 
 def adaptative_nscf_nbands(
-    seed, dir, calc=None, nbands=None, nbands_per_atom=None, n_bands_per_valence_el=4, lower_cap=18, higher_cap=200
+    seed, dir,atoms=None, nbands=None, nbands_per_atom=None, n_bands_per_valence_el=4, lower_cap=18, higher_cap=200,mode='pw', xc='PBE'
 ):
-    if calc is None:
+    if atoms is None:
         calc = GPAW(f"{dir}/{seed}/{seed}-scf.gpw")
-    atoms = calc.atoms
+        atoms = calc.atoms
     if nbands is not None:
         return nbands
     if nbands_per_atom is not None:
         return nbands_per_atom * len(atoms)
     # if neither is provided, estimate based on number of valence electrons
+    # build setups only
+    calc = GPAW(mode=mode, xc=xc, txt=None)
+    calc.initialize(atoms)
     setups = calc.setups
+
     tot_val_bands = 0  # setups.nvalence
     for i, atom in enumerate(atoms):
         for n, l, f in zip(setups[i].n_j, setups[i].l_j, setups[i].f_j):
