@@ -27,7 +27,7 @@ def compute_nscf_kmesh(atoms, NKFFT_=1, NK_=12, kill_axis=None):  # correct??
     return tuple(ret)
 
 
-def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None):
+def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None, max_denominator=8, tol=1e-2):
     """
     Perform self-consistent field calculation for the given atoms.
 
@@ -43,7 +43,7 @@ def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7,
 
     if auto_nk_grid:
         # if works well pass nk_length as param
-        kx, ky, kz = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1,kill_axis=kill_axis)  # for 2D materials, we can kill the axis perpendicular to the plane of the material
+        kx, ky, kz = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1,kill_axis=kill_axis, max_denominator=max_denominator, tol=tol)  # for 2D materials, we can kill the axis perpendicular to the plane of the material
     else:
         kx, ky, kz = compute_nscf_kmesh(atoms, NKFFT, NK)
     if world.rank == 0:
@@ -55,6 +55,7 @@ def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7,
         kpts={"size": grid, "gamma": True},
         convergence={"density": density_conv},
         mixer=MixerSum(0.25, 8, 100),
+        parallel={'sl_auto': True},
         txt=f"{out_dir}/{seed}/{seed}-scf.txt",
     )
     corrected_grid = adaptative_g_grid(calc, atoms)
@@ -66,6 +67,7 @@ def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7,
             gpts=corrected_grid,
             convergence={"density": density_conv},
             mixer=MixerSum(0.25, 8, 100),
+            parallel={'sl_auto': True},
             txt=f"{out_dir}/{seed}/{seed}-scf.txt",
         )
     atoms.calc = calc
@@ -128,6 +130,8 @@ def full_dft_run(
     skip_nscf=False,
     auto_nk_grid=False,
     kill_axis=None,
+    max_denominator=8,
+    tol=1e-2,
     nk=12,
     nkfft=1,
     ecut=500.0,
@@ -152,6 +156,8 @@ def full_dft_run(
             density_conv=density_conv_scf,
             auto_nk_grid=auto_nk_grid,
             kill_axis=kill_axis,
+            max_denominator=max_denominator,
+            tol=tol,
         )
 
     if not skip_nscf:

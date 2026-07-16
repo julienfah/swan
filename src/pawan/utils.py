@@ -8,6 +8,7 @@ from fractions import Fraction
 from wannierberri.symmetry.point_symmetry import PointGroup
 from wannierberri.grid.grid import iterate_vector
 from wannierberri.grid.grid import determineNK
+
 from ase import Atoms
 import warnings
 
@@ -34,7 +35,7 @@ def get_crystal_system(atoms):
 def standardize_cell(atoms):
     """Standardizes the cell of the given atoms object using spglib."""
     cell = spglib.standardize_cell(
-        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers), to_primitive=True, symprec=1e-3
+        (atoms.cell, atoms.get_scaled_positions(), atoms.numbers), to_primitive=True, symprec=1e-2
     )
     if cell is None:
         raise ValueError("Failed to standardize the cell. Please check the input structure.")
@@ -73,31 +74,62 @@ def adaptative_nscf_nbands(
 
 
 def adaptative_k_grid(atoms, nk_length=40, multiplier=1):
-    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    pg = pointgroup_from_atoms(atoms)  #PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
     periodic = np.array(atoms.pbc)
     NKdiv, NKFFT = determineNK(
         periodic=periodic, NKdiv=None, NKFFT=1, NK=None, length=nk_length, NKFFT_recommended=1, pointgroup=pg
     )
     return tuple(multiplier * NKdiv * NKFFT)
 
+from irrep.spacegroup import SpaceGroup
 
-def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1):
+def pointgroup_from_atoms(atoms, symprec=1e-3):
+    """
+    Build a WannierBerri PointGroup using irrep.SpaceGroup for symmetry detection,
+    which correctly handles all space groups including rhombohedral/trigonal.
+    """
+    # irrep.SpaceGroup.from_cell expects real_lattice with rows as lattice vectors
+    # and positions in fractional coordinates
+    spacegroup = SpaceGroup.from_cell(
+        real_lattice=atoms.cell.array,  # rows = lattice vectors
+        positions=atoms.get_scaled_positions(),
+        typat=atoms.numbers,
+        symprec=symprec
+    )
+
+    pg = PointGroup(spacegroup=spacegroup)
+    #print(f"Space group: {spacegroup.name}, {pg.size} point group operations")
+    return pg
+def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,max_denominator=8,tol=1e-2):
     """
     Creates a k-grid that fits the point group of the system that contains all high-symmetry points in the BZ, and is a multiple of the original one.
     """
     special_points = atoms.cell.bandpath().special_points  # dict letter: np.array([x,y,z]) in fractional coordinates
     multiples = []
     for letter, point in special_points.items():
-        if not np.allclose(point, 0.0) and not np.allclose(point, 1.0):
-            denominator_per_coordinate = [Fraction(coord).limit_denominator(10).denominator for coord in point]
-            multiples.append(denominator_per_coordinate)
+        if np.allclose(point, 0.0) or np.allclose(point, 1.0):
+            continue
+        denoms = []
+        skip = False
+        for coord in point:
+            frac = Fraction(coord).limit_denominator(max_denominator)
+            if abs(float(frac) - coord) > tol or frac.denominator > max_denominator:
+                skip = True
+                break
+            denoms.append(frac.denominator)
+        if not skip:
+            multiples.append(denoms)
     multiples = np.lcm.reduce(multiples, axis=0) if multiples else np.array([1, 1, 1])
     # print(f"LCM of denominators for special points: {multiples}")
     point_group_grid = adaptative_k_grid(
         atoms, nk_length=nk_length, multiplier=multiplier
     )  # minimal_symmetric_kgrid(atoms)
-    # print(f"Automatically determined k-grid: {point_group_grid}")
-    pg = PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    print(f"Initially determined k-grid: {point_group_grid}")
+
+    pg = pointgroup_from_atoms(atoms)#PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
+    #print(f"Point group: {pg}")
+    #print(f"spglib pg:{pointgroup_from_atoms(atoms).}")
+
     # now test all grids btw the determined one and the one multiplied by the lcm of the denominators of the special points, and select the one with the smallest number of k-points that is compatible with the point group and contains all special points
     candidates = [
         i
@@ -235,6 +267,20 @@ def parse_args():
     )
     parser.add_argument(
         "--nk", type=int, default=None, help="Number of k-points in each direction for SCF and NSCF calculations"
+    )
+    parser.add_argument(
+        "--max-denominator",
+        type=int,
+        default=None,
+        dest="max_denominator",
+        help="Maximum denominator for rational approximation of special k-points (default: 8)",
+    )
+    parser.add_argument(
+        "--sp-point-tol",
+        type=float,
+        default=None,
+        dest="tol",
+        help="Tolerance for rational approximation of special k-points (default: 1e-2)",
     )
     parser.add_argument("--nkfft", type=int, default=None, help="Number of k-points in each direction for FFT grid")
     parser.add_argument("--ecut", type=float, default=None, help="Plane-wave energy cutoff in eV (default: 500)")
