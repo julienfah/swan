@@ -98,7 +98,6 @@ def pointgroup_from_atoms(atoms, symprec=1e-3):
     )
 
     pg = PointGroup(spacegroup=spacegroup)
-    #print(f"Space group: {spacegroup.name}, {pg.size} point group operations")
     return pg
 def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,max_denominator=8,tol=1e-2):
     """
@@ -120,14 +119,18 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,
         if not skip:
             multiples.append(denoms)
     multiples = np.lcm.reduce(multiples, axis=0) if multiples else np.array([1, 1, 1])
-    # print(f"LCM of denominators for special points: {multiples}")
-    point_group_grid = adaptative_k_grid(
-        atoms, nk_length=nk_length, multiplier=multiplier
-    )  # minimal_symmetric_kgrid(atoms)
-    print(f"Initially determined k-grid: {point_group_grid}")
-
+    #print(f"LCM of denominators for special points: {multiples}")
+    try:
+        point_group_grid = adaptative_k_grid(
+            atoms, nk_length=nk_length, multiplier=multiplier
+        )  # minimal_symmetric_kgrid(atoms)
+    except AssertionError as e:
+        if world.rank == 0:
+            print(f"Error occurred while determining k-grid: {e}")
+            point_group_grid = (6,6,6)  # fallback to a default grid
+    if world.rank == 0:
+        print(f"Initially determined k-grid: {point_group_grid}")
     pg = pointgroup_from_atoms(atoms)#PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
-    #print(f"Point group: {pg}")
     #print(f"spglib pg:{pointgroup_from_atoms(atoms).}")
 
     # now test all grids btw the determined one and the one multiplied by the lcm of the denominators of the special points, and select the one with the smallest number of k-points that is compatible with the point group and contains all special points
@@ -148,6 +151,7 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,
     if kill_axis is not None:
         selected_grid = list(selected_grid)
         selected_grid[kill_axis] = 1  # for 2d materials, we can kill the axis perpendicular to the plane of the material
+
     return tuple(selected_grid)
 
 
