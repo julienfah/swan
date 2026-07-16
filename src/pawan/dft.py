@@ -27,7 +27,7 @@ def compute_nscf_kmesh(atoms, NKFFT_=1, NK_=12, kill_axis=None):  # correct??
     return tuple(ret)
 
 
-def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7, NK=12, NKFFT=1, auto_nk_grid=False, kill_axis=None, max_denominator=8, tol=1e-2):
+def scf(seed, out_dir, k_grid,atoms=None, input_file=None, ecut=500, density_conv=1e-7):
     """
     Perform self-consistent field calculation for the given atoms.
 
@@ -41,11 +41,7 @@ def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7,
             raise ValueError("Either atoms or input_file must be provided.")
         atoms = standardize_cell(read(input_file))
 
-    if auto_nk_grid:
-        # if works well pass nk_length as param
-        kx, ky, kz = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1,kill_axis=kill_axis, max_denominator=max_denominator, tol=tol)  # for 2D materials, we can kill the axis perpendicular to the plane of the material
-    else:
-        kx, ky, kz = compute_nscf_kmesh(atoms, NKFFT, NK)
+    kx, ky, kz = k_grid
     if world.rank == 0:
         print(f"Using k-mesh: {kx}x{ky}x{kz}")
     grid = [kx, ky, kz]
@@ -75,7 +71,7 @@ def scf(seed, out_dir, atoms=None, input_file=None, ecut=500, density_conv=1e-7,
     calc.write(f"{out_dir}/{seed}/{seed}-scf.gpw", mode="all")
 
 
-def nscf(seed, out_dir, in_dir,calc=None, nbands=40, unconverged_bands=2, NK=12, NKFFT=1):
+def nscf(seed, out_dir, in_dir,k_grid,calc=None, nbands=40, unconverged_bands=2):
     """
     Perform non-self-consistent field calculation, reading from the output of the SCF calculation.
     """
@@ -83,10 +79,9 @@ def nscf(seed, out_dir, in_dir,calc=None, nbands=40, unconverged_bands=2, NK=12,
         print(f"Running NSCF calculation for {seed} in directory {out_dir}")
     if calc is None:
         calc = GPAW(f"{in_dir}/{seed}/{seed}-scf.gpw", txt=None)
-    nscf_grid = compute_nscf_kmesh(calc.atoms, NKFFT, NK)
-    space_group = SpaceGroup.from_gpaw(calc)
-    irred_k_points = space_group.get_irreducible_kpoints_grid(nscf_grid)
 
+    space_group = SpaceGroup.from_gpaw(calc)
+    irred_k_points = space_group.get_irreducible_kpoints_grid(k_grid)
     calc_nscf_irred = calc.fixed_density(
         kpts=irred_k_points,
         nbands=nbands,
@@ -144,23 +139,22 @@ def full_dft_run(
     """
     Run the full DFT calculation (SCF and NSCF + band structure) for the given atoms.
     """
+    if auto_nk_grid:
+        k_grid = adaptative_high_sym_k_grid(atoms, nk_length=20, multiplier=1,kill_axis=kill_axis, max_denominator=max_denominator, tol=tol)
+    else:
+        k_grid = compute_nscf_kmesh(atoms, nkfft, nk)
     if not skip_scf:
         scf(
             atoms=atoms,
             input_file=input_file,
             seed=seed,
             out_dir=out_dir,
-            NK=nk,
-            NKFFT=nkfft,
+            k_grid=k_grid,
             ecut=ecut,
             density_conv=density_conv_scf,
-            auto_nk_grid=auto_nk_grid,
-            kill_axis=kill_axis,
-            max_denominator=max_denominator,
-            tol=tol,
         )
 
     if not skip_nscf:
-        nscf(nbands=nbands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, NK=nk, NKFFT=nkfft)
+        nscf(nbands=nbands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, k_grid=k_grid)
     dft_nbands = nbands if dft_plot_nbands is None else dft_plot_nbands
     dft_bands(seed=seed, in_dir=in_dir, out_dir=out_dir, dft_nbands=dft_nbands, npoints=npoints)
