@@ -8,7 +8,7 @@ from pawan.utils import parse_args, standardize_cell,adaptative_nscf_nbands
 from pawan.dft import full_dft_run
 from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
-from pawan.metrics import least_square_deviation_within_frozen
+from pawan.metrics import least_square_deviation_within_frozen,max_deviation_within_frozen
 
 
 def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
@@ -37,9 +37,10 @@ def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_d
     plt.savefig(f"{out_dir}/{seed}/{seed}-wannierized_bands.png", dpi=200)
     #log least square deviation
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "a") as f:
+        f.write("######## Band interpolation metrics #######\n")
         #f.write(f"least square deviation: {least_square_deviation(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), outer_win)}\n")
-        f.write(f"least_square_deviation_within_frozen: {least_square_deviation_within_frozen(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), outer_win, frozen_win)}\n")
-
+        f.write(f"least_square_deviation_within_frozen: {least_square_deviation_within_frozen(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), outer_win, frozen_win):.4f} meV\n")
+        f.write(f"max_deviation_within_frozen: {max_deviation_within_frozen(bs_dft.energies,bs_dft.path.kpts, bands_wannier.Enk.data,wb_path.get_kpoints(), frozen_win):.4f} meV\n")
 
 def auto_workflow(
     atoms,
@@ -59,7 +60,7 @@ def auto_workflow(
     nbands_per_atom=None,
     nbands=None,
     unconverged_bands_prc=5,
-    npoints=200,
+    npoints=144,
     dft_plot_nbands=None,
     K=1.2,
     spin_channel=0,
