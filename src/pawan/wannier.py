@@ -2,8 +2,7 @@ from gpaw import GPAW
 from wannierberri.w90files import WannierData
 from wannierberri import System_R, Path, evaluate_k_path
 from gpaw.mpi import serial_comm
-from ase.dft.kpoints import parse_path_string
-
+import numpy as np
 
 def wannierize(
     proj_set,
@@ -57,7 +56,16 @@ def wannierize(
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
             f.write(f"Center: {center}, Spread: {spread}\n")
 
-
+def index_to_label(labels, points, atol=1e-2):
+    """labels: {label: pos_array} (subset), points: full list of positions.
+    Returns {index_in_points: label}, with every matching index included,
+    sorted by index."""
+    result = {}
+    for label, pos in labels.items():
+        for i, p in enumerate(points):
+            if np.allclose(pos, p, atol=atol):
+                result[i] = label
+    return dict(sorted(result.items()))
 def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm):
     """
     Use of the Wannier functions to interpolate the bands.
@@ -65,7 +73,9 @@ def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=N
     if calc_nscf_irred is None:
         calc_nscf_irred = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     atoms = calc_nscf_irred.atoms
-    path = atoms.cell.bandpath()
+    #path = atoms.cell.bandpath()
+    path = atoms.cell.bandpath(npoints=npoints)
+    kpts = path.kpts
     if wannier_data is None:
         wannier_data = WannierData.from_npz(
             seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
@@ -77,15 +87,10 @@ def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=N
     system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
     kpoints = path.special_points  # dict of label: kcoords
-    path_labels = parse_path_string(path.path)[0]  # string like 'GXWLGK', drop unconnected parts at the moment
-    print(f"Interpolating bands along the path: {path_labels[0]}")
+    wb_labels = index_to_label(kpoints, kpts, atol=1e-6)
+    x, X, xlabels = path.get_linear_kpoint_axis()
+    breaks = [i for i in range(len(x) - 1) if np.isclose(x[i], x[i + 1])]
 
-    wb_path = Path.from_nodes(
-        real_lattice=system.real_lattice,
-        nodes=[kpoints[label] for label in path_labels],
-        labels=list(path_labels),
-        nk=int(npoints/(len(path_labels) - 1)),
-    )
-
+    wb_path = Path(system=system, k_list=kpts, labels=wb_labels, breaks=breaks)
     bands_wannier = evaluate_k_path(system, path=wb_path)
     return bands_wannier, wb_path
