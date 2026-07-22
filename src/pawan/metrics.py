@@ -1,6 +1,22 @@
 import numpy as np
 
 
+def match_kpoints(k_small, k_large, atol=1e-6):
+    """
+    For each point in k_small, find a matching point in k_large (within atol).
+    Returns (idx_small, idx_large, fully_included):
+      - idx_small, idx_large: index arrays such that k_small[idx_small] == k_large[idx_large] pairwise
+      - fully_included: True if every point in k_small has a match in k_large
+    """
+    k_small = np.asarray(k_small)
+    k_large = np.asarray(k_large)
+    close = np.all(np.abs(k_small[:, None, :] - k_large[None, :, :]) < atol, axis=-1)  # (n_small, n_large)
+    matched = close.any(axis=1)
+    idx_small = np.where(matched)[0]
+    idx_large = close[idx_small].argmax(axis=1)
+    return idx_small, idx_large, bool(matched.all())
+
+
 def least_square_deviation(dft_eig_energies, k_dft, wannier_interpolated_energies, k_wannier, outer_win,
                            per_nk=False, root=False, scale=100):
     """
@@ -20,12 +36,19 @@ def least_square_deviation(dft_eig_energies, k_dft, wannier_interpolated_energie
 
     k_dft = np.asarray(k_dft)
     k_wannier = np.asarray(k_wannier)
-    same_kpoints = k_dft.shape == k_wannier.shape and np.allclose(k_dft, k_wannier)
-    if same_kpoints:
-        # k-grids identical (e.g. built from the same bandpath) -> no interpolation needed
-        y_pred_interp = y_pred
+
+    if k_dft.shape[0] <= k_wannier.shape[0]:
+        idx_dft, idx_wann, fully_included = match_kpoints(k_dft, k_wannier)
+    else:
+        idx_wann, idx_dft, fully_included = match_kpoints(k_wannier, k_dft)
+
+    if fully_included:
+        # one k-grid is a subset of (or equal to) the other -> use the shared points directly
+        y_true = y_true[idx_dft]
+        y_pred_interp = y_pred[idx_wann]
         mask = np.ones(y_pred_interp.shape[0], dtype=bool)
     else:
+        print("The DFT and Wannier k-paths do not overlap. Interpolating the Wannier bands onto the DFT k-path.",k_dft[:5],k_wannier[:5])
         def path_coordinate(k):
             """Convert a k-path into a curvilinear coordinate."""
             k = np.asarray(k)
@@ -37,7 +60,6 @@ def least_square_deviation(dft_eig_energies, k_dft, wannier_interpolated_energie
         s_dft = path_coordinate(k_dft)
         s_wann = path_coordinate(k_wannier)
 
-        # Interpolate Wannier energies onto the DFT k-grid
         y_pred_interp = np.empty_like(y_true)
         for ib in range(nbands):
             y_pred_interp[:, ib] = np.interp(
@@ -48,13 +70,12 @@ def least_square_deviation(dft_eig_energies, k_dft, wannier_interpolated_energie
                 right=np.nan,
             )
 
-        # Keep only points inside the interpolation interval
         mask = np.isfinite(y_pred_interp).all(axis=1)
 
         if not np.any(mask):
             raise ValueError("The DFT and Wannier k-paths do not overlap.")
 
-    residuals = y_true[mask] - y_pred_interp[mask]  # shape (n_kpoints_kept, nbands)
+    residuals = y_true[mask] - y_pred_interp[mask]
     ytk = y_true[mask]
     if per_nk:
         fmask = (ytk >= outer_win[0]) & (ytk <= outer_win[1])
@@ -64,10 +85,8 @@ def least_square_deviation(dft_eig_energies, k_dft, wannier_interpolated_energie
     n_eigenvalues = fmask.sum()
     if n_eigenvalues == 0:
         raise ValueError("no (band,k) states fall inside the window.")
-    # Sigma = scale * [sqrt] ( sum f_nk (E - E_wann)^2 / sum f_nk )
     ms = np.sum((residuals ** 2) * fmask) / n_eigenvalues
     return scale * (np.sqrt(ms) if root else ms)
-
 
 def least_square_deviation_within_frozen(dft_eig_energies,k_dft, wannier_interpolated_energies,k_wannier,outer_win,frozen_win,
                                          per_nk=True, root=True, scale=1000):
