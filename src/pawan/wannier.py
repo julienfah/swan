@@ -37,7 +37,8 @@ def wannierize(
         spin_channel=spin_channel,
         projections=proj_set,
         irreducible=True,
-        files=["amn", "mmn", "eig", "symmetrizer"],
+        files=["amn", "mmn", "eig", "symmetrizer", "unk"],
+        unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
         unitary_params=unitary_params,
         return_bandstructure=True,
     )
@@ -52,6 +53,10 @@ def wannierize(
     )
     wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
     # log spreads
+    plot_wannier(
+        seed, out_dir, sc=(-1, 1), select_WF=[i for i in range(2)],
+        reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
+    )
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
             f.write(f"Center: {center}, Spread: {spread}\n")
@@ -94,3 +99,69 @@ def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=N
     wb_path = Path(system=system, k_list=kpts, labels=wb_labels, breaks=breaks)
     bands_wannier = evaluate_k_path(system, path=wb_path)
     return bands_wannier, wb_path
+
+
+
+def unfold_unk(wandata):
+    unk, sym, chk = wandata.unk, wandata.symmetrizer, wandata.chk
+    N = np.array(unk.grid_size, dtype=int)
+
+    # real-space gather maps: out(r) <- src(W^{-1}(r - w)), one per sym op
+    grid = np.indices(tuple(N))
+    index_maps = []
+    for symop in sym.spacegroup.symmetries:
+        W = np.asarray(symop.rotation)                 # integer, lattice basis
+        w = np.asarray(symop.translation)
+        Winv = np.rint(np.linalg.inv(W)).astype(int)
+        M = N[:, None] * Winv / N[None, :]
+        toff = N * (Winv @ w)
+        assert np.allclose(M, np.rint(M)),   f"rot incommensurate with grid {N.tolist()}"
+        assert np.allclose(toff, np.rint(toff)), f"transl incommensurate with grid {N.tolist()}"
+        M, toff = np.rint(M).astype(int), np.rint(toff).astype(int)
+        J = (np.tensordot(M, grid, (1, 0)) - toff[:, None, None, None]) % N[:, None, None, None]
+        index_maps.append((J[0], J[1], J[2]))
+
+    for ik in range(chk.num_kpts):
+        if ik in unk.data:
+            continue
+        ikirr = sym.kpt2kptirr[ik]
+        isym  = sym.kpt_from_kptirr_isym[ik]           # the op with kptirr2kpt[ikirr,isym]==ik
+        u_src = unk.data[int(sym.kptirr[ikirr])]        # (NB, *grid, 1)
+
+        i0, i1, i2 = index_maps[isym]
+        u_rot = u_src[:, i0, i1, i2, :]
+
+        if sym.time_reversals[isym]:
+            u_rot = u_rot.conj()
+
+        # band mixing: apply d_band blocks along axis 0, exactly as rotate_U does for amn rows
+        NB = u_rot.shape[0]
+        flat = u_rot.reshape(NB, -1)                    # (NB, ngrid)
+        out  = np.zeros_like(flat)
+        NB = u_rot.shape[0]
+        flat = u_rot.reshape(NB, -1)
+        out = np.zeros_like(flat)
+        for (s, e), blk in zip(sym.d_band_block_indices[ikirr],
+                               sym.d_band_blocks[ikirr][isym]):
+            out[s:e] = blk @ flat[s:e]
+        unk.data[ik] = out.reshape(u_rot.shape)
+        unk.data[ik] = out.reshape(u_rot.shape)
+
+    assert len(unk.data) == chk.num_kpts, f"filled {len(unk.data)}/{chk.num_kpts}"
+    return wandata
+def plot_wannier(seed, out_dir, sc=(-2, 2), select_WF=None, reduce_r_points=1,
+                 wannier_data=None,atoms=None):
+    wandata = wannier_data  # pass the in-memory object from wannierize()
+    if len(wandata.unk.data) < wandata.chk.num_kpts:
+        unfold_unk(wandata)
+    if len(wandata.chk.v_matrix) < wandata.chk.num_kpts:
+        sym = wandata.symmetrizer
+        U_irr = [wandata.chk.v_matrix[int(sym.kptirr[i])] for i in range(sym.NKirr)]
+        U_full = sym.U_to_full_BZ(U_irr)          # list of NK arrays
+        wandata.chk.v_matrix = {ik: U_full[ik] for ik in range(wandata.chk.num_kpts)}
+    if atoms is not None:
+        kw = dict(atoms_cart=atoms.get_positions(),
+                  atoms_names=atoms.get_chemical_symbols())
+    return wandata.plotWF(sc_min=sc[0], sc_max=sc[1], select_WF=select_WF,
+                          reduce_r_points=reduce_r_points,
+                          path=f"{out_dir}/{seed}/{seed}.WF", **kw)
