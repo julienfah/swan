@@ -6,9 +6,8 @@ import numpy as np
 from math import ceil, lcm
 from fractions import Fraction
 from wannierberri.symmetry.point_symmetry import PointGroup
-from wannierberri.grid.grid import iterate_vector
 from wannierberri.grid.grid import determineNK
-
+import itertools
 from ase import Atoms
 import warnings
 
@@ -99,6 +98,8 @@ def pointgroup_from_atoms(atoms, symprec=1e-3):
 
     pg = PointGroup(spacegroup=spacegroup)
     return pg
+def iterate_vector_inclusive(v1, v2):
+    return itertools.product(*(range(a, b + 1) for a, b in zip(v1, v2)))
 def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,max_denominator=8,tol=1e-2):
     """
     Creates a k-grid that fits the point group of the system that contains all high-symmetry points in the BZ, and is a multiple of the original one.
@@ -127,7 +128,7 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,
     except AssertionError as e:
         if world.rank == 0:
             print(f"Error occurred while determining k-grid: {e}")
-            point_group_grid = (6,6,6)  # fallback to a default grid
+        point_group_grid = (6,6,6)  # fallback to a default grid
     if world.rank == 0:
         print(f"Initially determined k-grid: {point_group_grid}")
     pg = pointgroup_from_atoms(atoms)#PointGroup(real_lattice=atoms.cell.array.T)  # columns = lattice vectors
@@ -136,7 +137,7 @@ def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,
     # now test all grids btw the determined one and the one multiplied by the lcm of the denominators of the special points, and select the one with the smallest number of k-points that is compatible with the point group and contains all special points
     candidates = [
         i
-        for i in iterate_vector(np.array(point_group_grid), np.array(point_group_grid) * multiples)
+        for i in iterate_vector_inclusive(np.array(point_group_grid), np.array(point_group_grid) * multiples)
         if pg.symmetric_grid(i) and np.all(i % multiples == 0)
     ]
     # select the one with the smallest product (fewest k-points)

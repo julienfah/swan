@@ -93,8 +93,7 @@ def hybridize(atoms,position):
                        f"using unhybridized orbitals.")
         return []
     if pg_str.startswith(("C0v", "D0h")):   # MolSym's linear-group labels
-        # linear site: real hybridization exists (sp for 2 collinear bonds),
-        # but Symtext.from_molecule crashes on it (mult_table=None bug) — build by hand
+        # linear site: real hybridization exists (sp for 2 collinear bonds), but not handled by molsym
         return handle_linear_site(pg_str)
     symtext = Symtext.from_molecule(mol)
     ic_coords = [ [0,i] for i in range(1, len(cluster_symbols)) ]#define coords as bonds between central atom and neigbors
@@ -107,6 +106,7 @@ def hybridize(atoms,position):
     ]
     ics = molsym.salcs.InternalCoordinates(symtext=symtext, fxn_list=ic_list)
     salcs = molsym.salcs.ProjectionOp(symtext, ics)
+    print("SALCs:", salcs)
     NAME_BY_COUNTS = {
     (1, 1, 0): "sp",
     (1, 2, 0): "sp2",
@@ -122,11 +122,11 @@ def hybridize(atoms,position):
         decomp = decompose_shell(symtext, l)
         for irrep, count in decomp.items():
             l_irrep_map[irrep].append(l)
-    #print(l_irrep_map)
+    print(l_irrep_map)
     for label, count in get_salc_irreps(salcs.salcs).items():
         l_list = l_irrep_map[label]
         l_count = [l_count[i] + l_list.count(i) * count for i in range(3)]
-    #print(f"\nTotal l counts: {l_count}")
+    print(f"\nTotal l counts: {l_count}")
 
     irrep_dim = {irrep.symbol: irrep.d for irrep in symtext.irreps}
 
@@ -136,7 +136,7 @@ def hybridize(atoms,position):
         d = irrep_dim[label]
         assert salc_count % d == 0, f"{label}: {salc_count} SALCs not divisible by dim {d}"
         target_mult[label] = salc_count // d
-
+    print(f"Target irrep multiplicities: {target_mult}")
     # for each needed irrep, which l's can supply a block, and how many blocks that l offers
     options_per_irrep = {}
     for label, mult_needed in target_mult.items():
@@ -148,7 +148,7 @@ def hybridize(atoms,position):
             return []   #no possible simple hybrids
             #raise ValueError(f"No single shell supplies {mult_needed}x {label} — needs mixing within a shell, not handled here")
         options_per_irrep[label] = candidates
-
+    print(f"Options per irrep: {options_per_irrep}")
     # enumerate every combination of choices across ambiguous irreps
     labels = list(options_per_irrep)
     combos = []
@@ -159,7 +159,7 @@ def hybridize(atoms,position):
         combos.append(tuple(l_counts))
 
     combos = sorted(set(combos))
-    #print("Candidate (n_s, n_p, n_d) combinations:", combos)
+    print("Candidate (n_s, n_p, n_d) combinations:", combos,"\n")
     supported_hybrids = []
     for counts in combos:
         name = NAME_BY_COUNTS.get(counts)
@@ -283,7 +283,7 @@ def decompose_shell(symtext, l):
         raw = p.sum() / symtext.order
         assert abs(raw.imag) < 1e-6, (
             f"l={l}, irrep={irrep.symbol}: non-negligible imaginary part {raw.imag} "
-            f"in reduction coefficient — real decomposition bug, not just rounding"
+            f"in reduction coefficient -> bug in character table or shell_character"
         )
         mults[irrep_idx] = round(raw.real)
 

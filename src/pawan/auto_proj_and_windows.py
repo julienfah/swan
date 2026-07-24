@@ -9,6 +9,7 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm, world
 
+from pawan.salc4 import build,describe_orbital
 from pawan.extend_proj_set import extend_to_energy_window
 from pawan.utils import safety_check_windows
 from pawan.hybridize import hybridize_orbitals
@@ -41,8 +42,9 @@ def get_proj_set(
         objective_wd=objective_wd,
         comm=comm,
     )
+    space_group = SpaceGroup.from_gpaw(calc)
     if hybridize_on_site:
-        #perform hybridization for each atom
+        """#perform hybridization for each atom
         selected_orbitals_l_list = defaultdict(list) #convert to list of {iatom : list of all l values of iatom}
         hybrydized_orbitals = []
         for i, (n,l) in selected_orbitals:
@@ -50,28 +52,32 @@ def get_proj_set(
         for i, l_list in selected_orbitals_l_list.items():
             selected_hybridized_orbitals = hybridize_orbitals(calc.atoms, calc.atoms.positions[i], orbitals=l_list)
             hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
-        selected_orbitals = hybrydized_orbitals
-    space_group = SpaceGroup.from_gpaw(calc)
+        selected_orbitals = hybrydized_orbitals"""
+        shells_dict = {calc.atoms[iatom].symbol: [l for iatom2, (n, l) in selected_orbitals if iatom2 == iatom] for iatom, (n, l) in selected_orbitals}
+        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_")
+        assert proj_set.num_wann == nwann, \
+        f"projection set has {proj_set.num_wann} WF but windows were sized for {nwann}"
+        #proj_set = build(calc.atoms, shells_dict, prefix=f"{seed}_")
+    else:
+        projs = []
+        # group atoms by species
+        species_positions = defaultdict(list)
+        for atom, pos in zip(calc.atoms, space_group.positions):
+            species_positions[atom.symbol].append(pos)
 
-    projs = []
-    # group atoms by species
-    species_positions = defaultdict(list)
-    for atom, pos in zip(calc.atoms, space_group.positions):
-        species_positions[atom.symbol].append(pos)
-
-    seen = set()
-    for iatom, (n, l) in selected_orbitals:
-        symbol = calc.atoms[iatom].symbol
-        if (symbol, n, l) in seen:
-            continue  # this species+shell already handled via orbit splitting
-        seen.add((symbol, n, l))
-        positions = species_positions[symbol]
-        orbits_ind = split_into_orbits(positions, space_group)
-        for orbit_indices in orbits_ind:
-            orbit_positions = [positions[i] for i in orbit_indices]
-            proj = Projection(position_num=orbit_positions, orbital=l, spacegroup=space_group, rotate_basis=True)
-            projs.append(proj)
-    proj_set = ProjectionsSet(projections=projs)
+        seen = set()
+        for iatom, (n, l) in selected_orbitals:
+            symbol = calc.atoms[iatom].symbol
+            if (symbol, n, l) in seen:
+                continue  # this species+shell already handled via orbit splitting
+            seen.add((symbol, n, l))
+            positions = species_positions[symbol]
+            orbits_ind = split_into_orbits(positions, space_group)
+            for orbit_indices in orbits_ind:
+                orbit_positions = [positions[i] for i in orbit_indices]
+                proj = Projection(position_num=orbit_positions, orbital=l, spacegroup=space_group, rotate_basis=True)
+                projs.append(proj)
+        proj_set = ProjectionsSet(projections=projs)
     if objective_wd is not None and frozen_win[1] < objective_wd[1]:
         energies, dos_total = calc.get_dos(**dos_kwargs)
         print(
@@ -91,7 +97,13 @@ def get_proj_set(
         f.write(f"Frozen window: {frozen_win}\n")
         f.write(f"Number of Wannier functions: {nwann}\n")
     with open(log_file_path, "a") as f:
-        f.write(f"Selected Projections (+ non-atomic-centered ones):\n {'\n'.join(map(str, proj_set.projections))},\n")
+        f.write("Selected Projections (+ non-atomic-centered ones):\n")
+        for p in proj_set.projections:
+            f.write(str(p) + "\n")
+            for orb in p.orbitals:
+                f.write(describe_orbital(orb) + "\n")
+    #with open(log_file_path, "a") as f:
+    #    f.write(f"Selected Projections (+ non-atomic-centered ones):\n {'\n'.join(map(str, proj_set.projections))},\n")
 
     return proj_set, outer_win, frozen_win, nwann
 
@@ -163,15 +175,13 @@ def Zhang_projection_method(
 
     if not selected_orbitals:
         print("No orbitals selected with initial alpha thresholds. Decreasing alpha.")
-        selected_orbitals, nwann = alpha_selection(
-            {l: (2 * l_num[l] + 1) * 0.5 for l in l_conversion.values()}, Emin_0, Emax_0
-        )
+        alpha = {l: (2 * l_num[l] + 1) * 0.5 for l in l_conversion.values()}
+        selected_orbitals, nwann = alpha_selection(alpha, Emin_0, Emax_0)
         if not selected_orbitals:
             raise ValueError(
                 "No orbitals selected even after decreasing alpha thresholds. Check the DOS and PDOS data."
             )
     # now refine the outer window based on the selected orbitals and their pDOS
-    # print(pdos)
     emax_refined = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
     steps = 0
     while emax_refined is None and steps < 10:
@@ -183,8 +193,26 @@ def Zhang_projection_method(
     if emax_refined is None:
         raise ValueError("E_max not found — increase nbands in NSCF")
 
-    # refine the orbital selection based on the refined outer window
-    selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+    # Refine the orbital selection on the widened window, keeping nwann and the
+    # outer window mutually consistent: the refined window (Emax_0 -> emax_refined)
+    # lowers the integrated occupations and can remove orbitals, which in
+    # turn requires the outer window to be re-solved for the new count so that
+    # int(rho) dE = K * nwann still holds. Iterate to a fixed point.
+    #selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+    prev_nwann = nwann
+    for _ in range(10):
+        selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+        if not selected_orbitals:
+            raise ValueError(
+                "No orbitals selected within the refined outer window. Check the DOS and PDOS data."
+            )
+        if nwann == prev_nwann:
+            break  # selection and outer window are now mutually consistent
+        emax_new = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
+        if emax_new is None:
+            raise ValueError("E_max not found — increase nbands in NSCF")
+        emax_refined = emax_new
+        prev_nwann = nwann
     print(f"Refined projections: {selected_orbitals}, nwann={nwann}")
 
     e_froz_max_0 = e_fermi + 2
