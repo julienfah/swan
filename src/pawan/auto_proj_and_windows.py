@@ -9,11 +9,10 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm, world
 
-from pawan.salc4 import build,describe_orbital
+from pawan.salc_M2 import build,describe_orbital,projectability_from_gpaw,site_group
 from pawan.extend_proj_set import extend_to_energy_window
 from pawan.utils import safety_check_windows
 from pawan.hybridize import hybridize_orbitals
-
 
 def get_proj_set(
     calc = None,
@@ -30,7 +29,7 @@ def get_proj_set(
 ):
     if calc is None:
         calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
-    selected_orbitals, outer_win, frozen_win, nwann = Zhang_projection_method(
+    selected_orbitals, outer_win, frozen_win, nwann = Zhang_projection_method(#rank_and_fill_method(#
         K=K,
         out_dir=out_dir,
         in_dir=in_dir,
@@ -54,7 +53,8 @@ def get_proj_set(
             hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
         selected_orbitals = hybrydized_orbitals"""
         shells_dict = {calc.atoms[iatom].symbol: [l for iatom2, (n, l) in selected_orbitals if iatom2 == iatom] for iatom, (n, l) in selected_orbitals}
-        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_")
+        weight_func = projectability_from_gpaw(calc, window=outer_win,n_select="valence")
+        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=weight_func)
         assert proj_set.num_wann == nwann, \
         f"projection set has {proj_set.num_wann} WF but windows were sized for {nwann}"
         #proj_set = build(calc.atoms, shells_dict, prefix=f"{seed}_")
@@ -107,6 +107,90 @@ def get_proj_set(
 
     return proj_set, outer_win, frozen_win, nwann
 
+def rank_and_fill_method(
+    K=1.2,
+    out_dir="test",
+    in_dir="test",
+    seed=None,
+    calc=None,
+    dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05},
+    gap_thres=0.1,
+    maximize_fw=False,
+    objective_wd=None,
+    comm=serial_comm,
+):
+    if calc is None:
+        calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
+    e_fermi = calc.get_fermi_level()
+    energies, dos_total = calc.get_dos(**dos_kwargs)
+    def integrate(dos, emin, emax):
+        mask = (energies >= emin) & (energies <= emax)
+        return np.trapezoid(dos[mask], energies[mask], dx=energies[1] - energies[0])
+
+    l_conversion = {0: "s", 1: "p", 2: "d", 3: "f"}
+    l_num = {"s": 0, "p": 1, "d": 2, "f": 3}
+
+    Emin_0, Emax_0, pdos, candidates = initial_DOS_energy_scan(
+        calc=calc, out_dir=out_dir, in_dir=in_dir, seed=seed, dos_kwargs=dos_kwargs, gap_thres=gap_thres
+    )
+    if objective_wd is not None:
+        Emin_0, Emax_0 = objective_wd[0], max(objective_wd[1], Emax_0)  # override with user-defined window
+    print(f"Initial outer window: {Emin_0} to {Emax_0} eV")
+    print(f"Candidates for projections: {candidates}")
+    # then integrate each orbital's pDOS and compare with occupation tolerance alpha
+
+    def integrate(dos, emin, emax):
+        mask = (energies >= emin) & (energies <= emax)
+        return np.trapezoid(dos[mask], energies[mask], dx=energies[1] - energies[0])
+    
+    
+    test_outer_win = (Emin_0, e_fermi + 6)  # initial guess for outer window
+    test_frozen_win = (Emin_0, e_fermi + 2)  # initial guess for frozen window
+    selected_orbitals, nwann = rank_and_fill_selection(calc, pdos, energies, candidates, l_num,
+                            test_outer_win, test_frozen_win, integrate,
+                            margin=1., max_wann=None)
+
+    # now refine the outer window based on the selected orbitals and their pDOS
+    emax_refined = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
+    #steps = 0
+    
+    #selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+    """prev_nwann = nwann
+    for _ in range(10):
+        selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+        if not selected_orbitals:
+            raise ValueError(
+                "No orbitals selected within the refined outer window. Check the DOS and PDOS data."
+            )
+        if nwann == prev_nwann:
+            break  # selection and outer window are now mutually consistent
+        emax_new = find_emax_from_dos(energies, dos_total, Emin_0, nwann, K=K)
+        if emax_new is None:
+            raise ValueError("E_max not found — increase nbands in NSCF")
+        emax_refined = emax_new
+        prev_nwann = nwann"""
+    print(f"Refined projections: {selected_orbitals}, nwann={nwann}")
+
+    e_froz_max_0 = e_fermi + 2
+    e_froz_min_0 = Emin_0
+
+    if maximize_fw:
+        e_froz_max_0 = emax_refined  # ensure frozen window is below outer window
+    if objective_wd is not None:
+        e_froz_max_0 = objective_wd[1]  # use objective frozen window if provided
+        e_froz_min_0 = objective_wd[0]
+    print(
+        f"before safety check: Outer window: {Emin_0} to {emax_refined} eV, Frozen window: {e_froz_min_0} to {e_froz_max_0} eV"
+    )
+    out_win, frozen_win = safety_check_windows(calc, nwann, (Emin_0, emax_refined), (e_froz_min_0, e_froz_max_0))
+    # could do all checks in one kpoints loop, more efficient, but this is clearer for now
+
+    print(f"Selected orbitals: {selected_orbitals}")
+    print(f"Outer window: {out_win[0]} to {out_win[1]} eV")
+    print(f"Frozen window: {frozen_win[0]} to {frozen_win[1]} eV")
+
+    return selected_orbitals, out_win, frozen_win, nwann
+
 
 def Zhang_projection_method(
     K=1.2,
@@ -125,7 +209,16 @@ def Zhang_projection_method(
         calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     e_fermi = calc.get_fermi_level()
     energies, dos_total = calc.get_dos(**dos_kwargs)
-
+    def integrate(dos, emin, emax):
+        mask = (energies >= emin) & (energies <= emax)
+        return np.trapezoid(dos[mask], energies[mask], dx=energies[1] - energies[0])
+    print(f"dos_total HHH {integrate(dos_total, energies[0], energies[-1])}")
+    tot = 0
+    for l in ["s", "p", "d"]:
+        for iatom in range(len(calc.atoms)):
+            e, dos = calc.get_orbital_ldos(a=iatom, angular=l, **dos_kwargs)
+            tot += integrate(dos, energies[0], energies[-1])
+    print(tot)
     l_conversion = {0: "s", 1: "p", 2: "d", 3: "f"}
     l_num = {"s": 0, "p": 1, "d": 2, "f": 3}
     alpha_initial = {l: (2 * l_num[l] + 1) * 0.6 for l in l_conversion.values()}  # 60% threshold
@@ -147,6 +240,8 @@ def Zhang_projection_method(
     def alpha_selection(alpha, emin, emax):
         selected_orbitals = []
         nwann = 0
+        print(sum(integrate(d, energies[0], energies[-1]) for d in pdos.values()),
+      "should equal", integrate(dos_total, energies[0], energies[-1]))
         for iatom, (n, l_str) in candidates:
             integrated = integrate(pdos[(iatom, l_str)], emin, emax)
             total = integrate(pdos[(iatom, l_str)], energies[0], energies[-1])
@@ -165,7 +260,40 @@ def Zhang_projection_method(
                         f"Rejected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} <= alpha={alpha[l_str]:.3f}\n\n"
                     )
         return selected_orbitals, nwann
-
+    def alpha_selection_new(alpha, emin, emax,
+                    tiny=1e-10):
+        keys = list(pdos.keys())                       # (iatom, l_str)
+        stack = np.array([pdos[k] for k in keys])      # (nchan, npts)
+        denom = stack.sum(axis=0)
+    
+        occ_density = np.zeros_like(stack)
+        good = denom > tiny
+        occ_density[:, good] = stack[:, good] / denom[good] * dos_total[good]
+    
+        def integrate(y):
+            mask = (energies >= emin) & (energies <= emax)
+            return np.trapezoid(y[mask], energies[mask])
+    
+        occ = {k: integrate(occ_density[i]) for i, k in enumerate(keys)}
+    
+        if world is None or world.rank == 0:
+            n_states = integrate(dos_total)
+            print(f"states in window (int DOS) = {n_states:.3f}; "
+                f"sum of attributed occupations = {sum(occ.values()):.3f}")
+    
+        selected_orbitals, nwann = [], 0
+        for iatom, (n, l_str) in candidates:
+            degeneracy = 2 * l_num[l_str] + 1
+            occupancy = occ.get((iatom, l_str), 0.0)
+            tag = "Selected" if occupancy > alpha[l_str] else "Rejected"
+            if occupancy > alpha[l_str]:
+                selected_orbitals.append((iatom, (n, l_str)))
+                nwann += degeneracy
+            if world is None or world.rank == 0:
+                print(f"{tag} orbital: Atom {iatom}, n={n}, l={l_str}, "
+                    f"occupation={occupancy:.3f}/{degeneracy} "
+                    f"vs alpha={alpha[l_str]:.3f}")
+        return selected_orbitals, nwann
     alpha = alpha_initial
     alpha_increments = {
         l: (alpha_max[l] - alpha_initial[l]) / 10.0 for l in l_conversion.values()
@@ -198,8 +326,8 @@ def Zhang_projection_method(
     # lowers the integrated occupations and can remove orbitals, which in
     # turn requires the outer window to be re-solved for the new count so that
     # int(rho) dE = K * nwann still holds. Iterate to a fixed point.
-    #selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
-    prev_nwann = nwann
+    selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
+    """prev_nwann = nwann
     for _ in range(10):
         selected_orbitals, nwann = alpha_selection(alpha, Emin_0, emax_refined)
         if not selected_orbitals:
@@ -212,7 +340,7 @@ def Zhang_projection_method(
         if emax_new is None:
             raise ValueError("E_max not found — increase nbands in NSCF")
         emax_refined = emax_new
-        prev_nwann = nwann
+        prev_nwann = nwann"""
     print(f"Refined projections: {selected_orbitals}, nwann={nwann}")
 
     e_froz_max_0 = e_fermi + 2
@@ -353,3 +481,68 @@ def merge_intervals(intervals, threshold):
         else:
             merged.append((s, e))
     return merged
+
+
+
+import numpy as np
+
+
+def rank_and_fill_selection(calc, pdos, energies, candidates, l_num,
+                            outer_win, frozen_win, integrate,
+                            margin=1.0, max_wann=None, world=None):
+    """Select projections by RANK, sized by the frozen manifold.
+ 
+    Replaces the alpha threshold. Rationale: every projected-DOS flavour
+    available in GPAW fails as an absolute occupation -- PAW projectors are
+    duals of the partial waves (wrong scale, artificial high-energy tail);
+    Mulliken redistribution restores the sum rule but lets channels exceed
+    2l+1; the LCAO basis contains polarisation functions with no occupancy
+    meaning and is not orthonormal. All of them, however, RANK channels
+    sensibly. So rank, and let the physics set the size:
+ 
+      score = (weight inside the outer window) / (weight over all energies)
+              -- a per-channel fraction, so each channel's own scale cancels
+ 
+      target = max over k of the number of bands inside the FROZEN window
+              -- the manifold the Wannier functions MUST span
+ 
+    Channels are added in decreasing score until nwann >= margin * target.
+    No threshold to calibrate, and nwann cannot come out too small to
+    disentangle.
+    """
+    scores = {}
+    for iatom, (n, l_str) in candidates:
+        d = pdos[(iatom, l_str)]
+        tot = integrate(d, energies[0], energies[-1])
+        inw = integrate(d, outer_win[0], outer_win[1])
+        scores[(iatom, n, l_str)] = inw / tot if tot > 1e-12 else 0.0
+ 
+    nfroz = 0
+    for k in range(len(calc.get_k_point_weights())):
+        eps = calc.get_eigenvalues(kpt=k)
+        nfroz = max(nfroz, int(((eps >= frozen_win[0]) &
+                                (eps <= frozen_win[1])).sum()))
+    target = int(np.ceil(margin * nfroz))
+ 
+    order = sorted(scores, key=lambda k: -scores[k])
+    selected_orbitals, nwann = [], 0
+    for (iatom, n, l_str) in order:
+        if nwann >= target:
+            break
+        deg = 2 * l_num[l_str] + 1
+        if max_wann is not None and nwann + deg > max_wann:
+            continue
+        selected_orbitals.append((iatom, (n, l_str)))
+        nwann += deg
+ 
+    if world is None or world.rank == 0:
+        print(f"frozen window holds at most {nfroz} bands -> target {target} WF")
+        for key in order:
+            mark = "KEEP" if (key[0], (key[1], key[2])) in selected_orbitals else "drop"
+            print(f"  {mark}  atom {key[0]} l={key[2]}  score={scores[key]:.3f}")
+        print(f"selected nwann = {nwann}")
+        if nwann < target:
+            print(f"WARNING: only {nwann} WF for {target} frozen bands -- "
+                  "add shells or widen the candidate list")
+    return selected_orbitals, nwann
+ 
