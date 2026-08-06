@@ -39,10 +39,9 @@ from typing import NamedTuple
 
 from gpaw.mpi import serial_comm, world
 
-from .ao_projectability import frozen_from_projectability
-from .sphere_projection_method import (band_blocks, cap_frozen_window,
-                                       emax_from_band_count)
-from .amn_projectability import (block_scores, channel_occupancy, greedy_select,
+from .windows import band_blocks, cap_frozen_window, emax_from_band_count
+from .amn_projectability import (channel_occupancy, frozen_from_projectability,
+                                greedy_select, select_by_occupancy,
                                 window_rank_check,
                                 subset_projectability,
                                 pdos_from_weights, projectability_from_amn,
@@ -73,7 +72,7 @@ class CandidateScan(NamedTuple):
     eps_kn: object          # (nk, nb) eigenvalues, aligned with p_kn
     wk_k: object            # (nk,) k-point weights
     occupancy: dict         # {key: electrons} Loewdin populations
-    nelec: float            # electrons in the occupied manifold
+    n_states: float         # states (NOT electrons) in the occupancy window
     spanned: float          # fraction of them the candidate set spans
     pdos: tuple             # (energies, {key: pdos}, total_dos)
     A: object               # (nk, nb, nproj) raw amn
@@ -225,17 +224,9 @@ def extract_amn(wandata):
         "add that path to _as_knm.")
 
 
-def score_candidates(calc, w, blocks, eps_kn, wk_k, window, verbose=True):
-    """Window-restricted block scores, labelled by atom and shell."""
-    labels = {(rep, l): f"atom {rep} {calc.atoms[rep].symbol} l={L_NAME[l]}"
-              for (rep, l), _ in blocks}
-    return block_scores(w, blocks, eps_kn, wk_k, window, verbose=verbose,
-                        labels=labels)
-
-
 def candidate_scan(calc, spacegroup, from_gpaw, spin_channel=0,
                    shells=(0, 1, 2), symprec=1e-4, verbose=True,
-                   pdos_width=0.1, pdos_path=None, **kw):
+                   pdos_width=0.1, pdos_path=None, occ_window=None, **kw):
     """Build a wide candidate set, compute ONLY the amn, return ranked weights.
 
     from_gpaw : the WannierData.from_gpaw callable (injected so this module does
@@ -305,10 +296,12 @@ def candidate_scan(calc, spacegroup, from_gpaw, spin_channel=0,
     e_fermi = calc.get_fermi_level()
     labels = {(rep, l): f"atom {rep} {calc.atoms[rep].symbol} l={L_NAME[l]}"
               for (rep, l), _ in blocks}
-    ceiling = {key: (sl.stop - sl.start) for key, sl in blocks}
-    occ, nelec = channel_occupancy(eps_kn, wk_k, w, e_fermi, ceiling=ceiling,
-                                   labels=labels, verbose=verbose)
-    spanned = sum(occ.values()) / max(nelec, 1e-30)
+    g_s = 1 if getattr(calc, "get_number_of_spins", lambda: 1)() == 2 else 2
+    occ, n_states = channel_occupancy(eps_kn, wk_k, w, e_fermi,
+                                      window=occ_window, labels=labels,
+                                      blocks=blocks, spin_degeneracy=g_s,
+                                      verbose=verbose)
+    spanned = sum(occ.values()) / max(n_states, 1e-30)
     pdos = pdos_from_weights(eps_kn, wk_k, w, width=pdos_width)
 
     if verbose and spanned < 0.95:
@@ -328,7 +321,8 @@ def candidate_scan(calc, spacegroup, from_gpaw, spin_channel=0,
     if verbose:
         print(f"  blocks reconstruct p_nk: {np.allclose(sum(w.values()), p_kn)}")
     return CandidateScan(p_kn=p_kn, w=w, blocks=blocks, proj_set=proj_set,
-                         eps_kn=eps_kn, wk_k=wk_k, occupancy=occ, nelec=nelec,
+                         eps_kn=eps_kn, wk_k=wk_k, occupancy=occ,
+                         n_states=n_states,
                          spanned=spanned, pdos=pdos, A=A, S=S, e_fermi=e_fermi)
 
 
@@ -707,6 +701,9 @@ def amn_projection_method(
     maximize_fw=False,
     shells=(0, 1, 2),
     spin_channel=0,
+    select="occupancy",
+    alpha=0.45,
+    renormalize=False,
     margin=1.2,
     p_target=None,
     p_froz=None,
@@ -813,12 +810,32 @@ def amn_projection_method(
               for (rep, l), _ in res.blocks if isinstance(rep, (int, np.integer))}
     say(f"\ntarget manifold {emin:.3f} .. {froz_hi:.3f} eV "
         f"({n_min} bands at the worst k):")
-    chosen, nwann, coverage, history = greedy_select(
-        res.A, res.S if res.S is not None else
-        np.stack([res.A[k].conj().T @ res.A[k] for k in range(len(wk_k))]),
-        res.blocks, target, wk_k, n_froz=n_min, margin=margin,
-        p_target=p_target, verbose=(verbose and world.rank == 0),
-        labels=labels)
+    if select == "occupancy":
+        g_s = 1 if getattr(calc, "get_number_of_spins", lambda: 1)() == 2 else 2
+        # select over the WHOLE window, conduction included -- an
+        # occupied-only rule drops essential empty shells (Ti 3d in BaTiO3)
+        occ_w, n_st = channel_occupancy(eps_kn, wk_k, res.w, e_fermi,
+                                        window=(emin, froz_hi),
+                                        clip_to_fermi=False,
+                                        renormalize=renormalize, labels=labels,
+                                        blocks=res.blocks, spin_degeneracy=g_s,
+                                        verbose=(verbose and world.rank == 0))
+        chosen, nwann = select_by_occupancy(occ_w, res.blocks, n_st,
+                                            alpha=alpha,
+                                            verbose=(verbose and world.rank == 0),
+                                            labels=labels)
+        coverage, history = float("nan"), []
+        if nwann < n_min:
+            warnings.warn(
+                f"nwann={nwann} < n_froz={n_min}: the frozen window cannot fit. "
+                "Lower alpha, or use select='greedy', which sizes on n_froz.")
+    else:
+        chosen, nwann, coverage, history = greedy_select(
+            res.A, res.S if res.S is not None else
+            np.stack([res.A[k].conj().T @ res.A[k] for k in range(len(wk_k))]),
+            res.blocks, target, wk_k, n_froz=n_min, margin=margin,
+            p_target=p_target, verbose=(verbose and world.rank == 0),
+            labels=labels)
 
     # ---- 4. windows from the chosen set
     cols = cols_of(chosen, res.blocks)
@@ -828,7 +845,8 @@ def amn_projection_method(
 
     # Scan from E_F UPWARD only.  The occupied bands are what the Wannier
     # functions must reproduce, so they are frozen whatever their p; a dip below
-    # E_F must never truncate the window. 
+    # E_F must never truncate the window.  Scanning from emin is what collapsed
+    # the frozen window to a point (-6.6514 .. -6.6514) on Si.
     scan_from = max(emin, e_fermi)
     diag_p = p_froz if p_froz is not None else 0.95
     froz_diag = frozen_from_projectability(eps_kn, p_sel, scan_from, froz_hi,
@@ -898,8 +916,8 @@ def amn_projection_method(
                     f"gap_thres={gap_thres}\n")
             f.write(f"outer  = {out_win}\nfrozen = {frozen_win}\n")
             f.write(f"nwann  = {nwann}\ncoverage = {coverage:.4f}\n")
-            f.write(f"candidate set spans {res.spanned:.1%} of the occupied "
-                    "manifold\n\ngreedy order:\n")
+            f.write(f"candidate set spans {res.spanned:.1%} of the occupancy "
+                    "window\n\ngreedy order:\n")
             for key, sz, nw, cov in history:
                 f.write(f"  + {key}  +{sz} WF  nwann={nw}  coverage={cov:.4f}\n")
 

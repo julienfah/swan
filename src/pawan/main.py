@@ -9,7 +9,7 @@ from pawan.dft import full_dft_run
 from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
 from pawan.metrics import least_square_deviation_within_frozen,max_deviation_within_frozen
-
+from pawan.ebr_method3 import EBR_method
 
 def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
     """
@@ -81,6 +81,7 @@ def auto_workflow(
     only_dft=False,
     only_wannier=False,
     hybridize_on_site=False,
+    EBR=False,
 ):
     """if not skip_scf:
         scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
@@ -125,17 +126,20 @@ def auto_workflow(
             print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
             dos_kwargs = {"spin": spin_channel, "npts": npts_dos, "width": dos_width}
 
-            proj_set, outer_win, frozen_win, nwann = get_proj_set(
-                K=K,
-                seed=seed,
-                out_dir=out_dir,
-                in_dir=in_dir,
-                dos_kwargs=dos_kwargs,
-                gap_thres=gap_thres,
-                maximize_fw=maximize_fw,
-                objective_wd=objective_wd,
-                hybridize_on_site=hybridize_on_site,
-            )
+            if not EBR:
+                proj_set, outer_win, frozen_win, nwann = get_proj_set(
+                    K=K,
+                    seed=seed,
+                    out_dir=out_dir,
+                    in_dir=in_dir,
+                    dos_kwargs=dos_kwargs,
+                    gap_thres=gap_thres,
+                    maximize_fw=maximize_fw,
+                    objective_wd=objective_wd,
+                    hybridize_on_site=hybridize_on_site,
+                )
+            else:
+                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=500, comm=serial_comm, only_on_site=True, verbose=False,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,hybrids=hybridize_on_site)
 
             if not skip_wannier:
                 unitary_params = dict(

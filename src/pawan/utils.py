@@ -458,4 +458,11 @@ def parse_args():
         dest="hybridize_on_site",
         help="Try to hybridize orbitals on atomic sites, if possible (default: False)",
     )
+    parser.add_argument(
+        "--EBR",
+        action="store_true",
+        default=None,
+        dest="EBR",
+        help="Use EBR method to determine projections and windows (default: False)",
+    )
     return parser.parse_args()

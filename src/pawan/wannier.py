@@ -49,12 +49,13 @@ def wannierize(
         froz_max=frozen_win[1],
         outer_min=outer_win[0],
         outer_max=outer_win[1],  # np.inf,#
+        savechk=False,
         **wannierization_params,
     )
     wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
     # log spreads
     plot_wannier(
-        seed, out_dir, sc=(-1, 1), select_WF=[i for i in range(2)],
+        seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
         reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
     )
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:

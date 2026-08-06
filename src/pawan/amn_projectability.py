@@ -74,8 +74,11 @@ __all__ = [
     "pdos_from_weights",
     "channel_occupancy",
     "subset_projectability",
+    "orbital_window_fraction",
     "greedy_select",
+    "select_by_occupancy",
     "window_rank_check",
+    "frozen_from_projectability",
     "capture_convergence",
     "p_convergence",
 ]
@@ -84,52 +87,6 @@ __all__ = [
 # --------------------------------------------------------------------------
 # loading
 # --------------------------------------------------------------------------
-
-def load_amn(path):
-    """Return A with shape (nk, nb, nproj), from .amn.npz or a w90 .amn text."""
-    p = str(path)
-    if p.endswith(".npz"):
-        z = np.load(p, allow_pickle=True)
-        for key in ("data", "amn", "A", "arr_0"):
-            if key in z:
-                A = np.asarray(z[key])
-                break
-        else:
-            raise KeyError(f"no recognised array in {p}: keys are {list(z)}")
-    else:
-        with open(p) as f:
-            f.readline()                                   # comment
-            nb, nk, nproj = (int(x) for x in f.readline().split()[:3])
-            A = np.zeros((nk, nb, nproj), complex)
-            for line in f:
-                t = line.split()
-                if len(t) < 5:
-                    continue
-                m, n, k = int(t[0]) - 1, int(t[1]) - 1, int(t[2]) - 1
-                A[k, m, n] = float(t[3]) + 1j * float(t[4])
-    A = np.asarray(A)
-    if A.ndim != 3:
-        raise ValueError(f"expected (nk, nb, nproj), got {A.shape}")
-    return A
-
-
-def block_map(proj_set):
-    """[(label, slice), ...] over the AMN columns, one entry per Projection.
-
-    Assumes WannierBerri emits columns projection by projection, each
-    contributing n_sites * n_orbitals_per_site.  VERIFY THIS ONCE for your
-    version: the total is checked against A.shape[2], but a permutation between
-    projections of equal size would pass that check silently.  Build the
-    candidate set with one Projection per (orbit, l) and blocks of distinct
-    sizes if you want the check to bite.
-    """
-    out, off = [], 0
-    for i, p in enumerate(proj_set.projections):
-        n = p.num_wann
-        label = getattr(p, "orbital", None) or f"proj{i}"
-        out.append((f"{i}:{label}", slice(off, off + n)))
-        off += n
-    return out
 
 
 # --------------------------------------------------------------------------
@@ -427,119 +384,6 @@ def weights_from_amn(Atil, blocks):
             for lab, sl in blocks}
 
 
-def block_scores(w, blocks, eps_kn, wk_k, window, verbose=True, labels=None):
-    """{label: fraction of that block's weight landing inside `window`}.
-
-    score = sum_{nk in window} w_k * weight / n_columns_in_block,  in [0, 1].
-
-    This is the informative quantity: a chemically relevant block concentrates
-    its unit-per-column weight in the manifold you care about, an irrelevant one
-    scatters it over high conduction bands.  Si d spreads out; Si s and p do not.
-
-    Caveat, same as everywhere else in this project: if `window` is the whole
-    spectrum every score is 1.0 by the identity above.  The window has to be the
-    physical manifold, not the disentanglement window.
-    """
-    emin, emax = window
-    sel = (eps_kn >= emin) & (eps_kn <= emax)
-    wk = wk_k / wk_k.sum()
-    size = {lab: (sl.stop - sl.start) for lab, sl in blocks}
-    # k-weights sum to 1 and each column's band-sum is 1, so dividing by the
-    # number of columns gives a fraction in [0, 1]
-    out = {lab: float((wk[:, None] * w[lab] * sel).sum()) / size[lab]
-           for lab, _ in blocks}
-    if verbose:
-        print(f"  block scores over {emin:.3f} .. {emax:.3f} eV "
-              "(fraction of each block's weight inside the window):")
-        for lab, _ in sorted(blocks, key=lambda b: -out[b[0]]):
-            name = labels.get(lab, lab) if labels else lab
-            print(f"    {str(name):28s} {out[lab]:6.1%}  "
-                  f"({size[lab]} column(s))")
-    return out
-
-
-def capture_convergence(A, fractions=(0.5, 0.75, 1.0), tol=0.02, verbose=True):
-    """DEPRECATED -- diagnoses the wrong quantity.  Use p_convergence.
-
-    diag(A^dag A) -> ||g_M||^2 only in the complete-basis limit, and for a
-    localised analytic trial orbital the Fourier tail decays as a power law, so
-    this never converges and the last-25% increment is not monotone in nbands.
-    Kept only so existing calls do not break.
-    """
-    warnings.warn("capture_convergence diagnoses convergence of diag(A^dag A), "
-                  "which does not converge for a localised trial orbital. Use "
-                  "p_convergence instead.", DeprecationWarning, stacklevel=2)
-    A = np.asarray(A)
-    nb = A.shape[1]
-    full = np.zeros(A.shape[2])
-    for k in range(A.shape[0]):
-        full += np.diag(A[k].conj().T @ A[k]).real
-    out = {}
-    for f in fractions:
-        n = max(1, int(round(f * nb)))
-        d = np.zeros(A.shape[2])
-        for k in range(A.shape[0]):
-            d += np.diag(A[k, :n].conj().T @ A[k, :n]).real
-        out[f] = float(np.max(np.abs(d / np.maximum(full, 1e-30) - 1.0)))
-    if verbose:
-        print("  band convergence of A^dag A (max relative deficit vs all bands):")
-        for f in fractions:
-            print(f"    {int(f * 100):3d}% of bands: {out[f]:.4f}")
-        last = sorted(fractions)[-2] if len(fractions) > 1 else fractions[0]
-        if out[last] > tol:
-            print(f"    NOT CONVERGED: {int(last * 100)}% -> 100% still moves it "
-                  f"by {out[last]:.3f} > {tol}. Raise nbands, or narrow the "
-                  "candidate shells (a diffuse d needs far more bands than s/p).")
-        else:
-            print(f"    converged to within {tol}; A^dag A is a fair stand-in "
-                  "for S")
-    return out
-
-
-def p_convergence(A, bands=None, fractions=(0.4, 0.6, 0.8, 1.0), tol=0.005,
-                  verbose=True):
-    """Is p_nk converged in nbands, over the bands you actually use?
-
-    Recomputes p from A[:, :n, :] for each fraction and reports the mean over
-    `bands` (default: the lowest nproj bands, a stand-in for the target
-    manifold).  Costs nothing but array slicing.
-
-    Read it as an approach FROM ABOVE: truncating the band set forces
-    span{P_nb g} inside the computed bands, which inflates p for the low bands.
-    So the sequence decreases and the last increment is your error bar.  If
-    80% -> 100% still moves it by more than `tol`, the number you would compare
-    against a threshold is not yet the number you will get with more bands.
-    """
-    A = np.asarray(A)
-    nk, nb, nproj = A.shape
-    if bands is None:
-        warnings.warn("p_convergence: `bands` defaults to the lowest nproj "
-                      "bands, which mixes the occupied manifold with "
-                      "conduction states and understates p. Pass "
-                      "bands=slice(0, n_occupied).", stacklevel=2)
-        bands = slice(0, min(nproj, nb))
-    out = {}
-    for f in fractions:
-        n = max(nproj, int(round(f * nb)))
-        p, _ = projectability_from_amn(A[:, :n, :], verbose=False)
-        out[f] = float(p[:, bands].mean())
-    fr = sorted(out)
-    if verbose:
-        print("  p convergence in nbands (mean over the target bands):")
-        for f in fr:
-            n = max(nproj, int(round(f * nb)))
-            print(f"    {n:4d} bands ({int(f * 100):3d}%): p = {out[f]:.5f}")
-        drift = abs(out[fr[-1]] - out[fr[-2]])
-        print(f"    last increment: {drift:.5f}", end="  ")
-        if drift > tol:
-            print(f"> tol {tol} -- NOT converged; p is still falling, so the "
-                  "current value is an overestimate. Raise nbands before "
-                  "calibrating any threshold.")
-        else:
-            print(f"<= tol {tol}; converged")
-    return out
-
-
 # --------------------------------------------------------------------------
 # pDOS-like output
 # --------------------------------------------------------------------------
@@ -573,54 +417,22 @@ def pdos_from_weights(eps_kn, wk_k, w, energies=None, width=0.1, npts=601,
     return energies, out, total
 
 
-def channel_occupancy(eps_kn, wk_k, w, e_fermi, spin_degeneracy=2, ceiling=None,
-                      verbose=True, labels=None):
-    """Electrons of each channel's character in the occupied manifold.
-
-        N^{a,l} = g_s * sum_{nk : eps <= E_F} w_k * weight^{a,l}_nk
-
-    This is a LOEWDIN POPULATION: the Loewdin weights partition p_nk among the
-    trial orbitals, positively and summing to p_nk, so N is the analogue of an
-    integrated pDOS occupancy and is directly comparable to one -- to Zhang's
-    integrated pDOS, or to a VASP LORBIT decomposition.
-
-    The total sum_channels N is g_s * sum_occ p, which is BELOW the electron
-    count by exactly the part of the occupied manifold your trial orbitals do
-    not span.  That residue is the honest version of the "sphere deficit", and
-    unlike it, it is a property of your projection set rather than of rcut.
-    """
-    eps_kn = np.asarray(eps_kn)
-    wk = np.asarray(wk_k) / np.sum(wk_k)
-    occ = eps_kn <= e_fermi
-    N = {key: spin_degeneracy * float((wk[:, None] * np.asarray(v) * occ).sum())
-         for key, v in w.items()}
-    nelec = spin_degeneracy * float((wk[:, None] * occ).sum())
-    if verbose:
-        tot = sum(N.values())
-        print(f"  Loewdin occupancies (electrons in the occupied manifold):")
-        for key in sorted(N, key=lambda k: -N[k]):
-            name = labels.get(key, key) if labels else key
-            line = f"    {str(name):30s} {N[key]:7.3f} e"
-            if ceiling is not None and ceiling.get(key):
-                line += f"   ({N[key] / ceiling[key]:6.1%} of {ceiling[key]})"
-            print(line)
-        print(f"    {'TOTAL':30s} {tot:7.3f} e   of {nelec:.3f} in the manifold"
-              f"  ({tot / max(nelec, 1e-30):.1%} spanned)")
-    return N, nelec
-
-
 # --------------------------------------------------------------------------
 # selection: score the SET, on the manifold that must be reproduced
 # --------------------------------------------------------------------------
 
-def subset_projectability(A, S, cols, rcond=1e-8):
+def subset_projectability(A, S, cols, O=None, rcond=1e-8):
     """p_nk for the subspace spanned by a SUBSET of the trial orbitals.
 
     Exact, not a re-weighting of the full-set answer: dropping columns changes
     the projector, so the sub-blocks of A and S must be re-inverted.  Batched
     over k, so a greedy sweep over a few dozen candidate sets is seconds.
     """
-    A = np.asarray(A)[:, :, cols]
+    A = np.asarray(A)
+    if O is not None:
+        A = np.stack([_inv_sqrt_herm(np.asarray(O[k]), rcond)[0] @ A[k]
+                      for k in range(A.shape[0])])
+    A = A[:, :, cols]
     S = np.asarray(S)[:, cols][:, :, cols]
     reg = rcond * np.trace(S, axis1=1, axis2=2).real[:, None, None] / max(len(cols), 1)
     X = np.linalg.solve(S + reg * np.eye(len(cols)),
@@ -691,13 +503,13 @@ def greedy_select(A, S, blocks, target_mask, wk_k, n_froz=0, margin=1.2,
         rate = rates[best]
         if best_rate is None or rate > best_rate:
             best_rate = rate
-        """if nwann >= n_froz and best_rate > 0 and rate < min_rate_frac * best_rate:
+        if nwann >= n_froz and best_rate > 0 and rate < min_rate_frac * best_rate:
             if verbose:
                 name = labels.get(best, best) if labels else best
                 print(f"    stop short of n_target: best remaining is {name} "
                       f"at {rate:.4f}/WF, {rate / best_rate:.0%} of the best "
                       f"rate seen -- padding to {n_target} would add nothing")
-            break"""
+            break
         if budget is not None and nwann + size[best] > budget:
             break
         chosen.add(best)
@@ -786,3 +598,204 @@ def window_rank_check(A, cols, eps_kn, out_win, wk_k=None, tol=1e-3,
                     names.append(f"{nm} ({bad[i]:.2f})")
                 print(f"    null direction is carried by: {', '.join(names)}")
     return smin, worst
+
+
+def frozen_from_projectability(eps_kn, p_nk, emin, emax, p_froz=0.95):
+    """Largest emax' <= emax with every state in [emin, emax'] at p >= p_froz.
+
+    Unlike the sphere `atomicity` gate this is safe to switch on: p is a true
+    projection fraction with an absolute meaning, so p < 0.95 says the state
+    genuinely lies outside the span and freezing it WILL cost you spread.
+    Vitale's pmax_thr default.
+    """
+    inside = (eps_kn >= emin) & (eps_kn <= emax)
+    bad = inside & (p_nk < p_froz)
+    return float(eps_kn[bad].min() - 1e-6) if bad.any() else float(emax)
+
+
+def channel_occupancy(eps_kn, wk_k, w, e_fermi, window=None,
+                      clip_to_fermi=False, renormalize=False,
+                      spin_degeneracy=None, verbose=True, labels=None,
+                      blocks=None):
+    """Loewdin population of each channel, in STATES, over a WINDOW.
+
+    Two things this gets right that the previous version did not.
+
+    UNITS.  N is returned in states, and the natural ceiling is the number of
+    COLUMNS in the block.  With the true S, sum over all bands of |Atil_nM|^2 is
+    <= 1 per column, so N / n_columns is genuinely in [0, 1].  Returning
+    electrons (2x states) and dividing by a count of orbitals is what produced
+    "161.6% of 10" for Bi 5d -- the ceiling was off by exactly the spin factor,
+    and every figure above 100% in that table was this and nothing else.
+
+    WINDOW.  `eps <= E_F` includes every occupied state, and in CaMg2Bi2 that is
+    four deep semicore blocks at -71, -38, -18 and -6 eV holding 24 of the 30
+    occupied bands.  Bi 5d, Ca 3p and Mg 2p then dominate the table because they
+    are FULL semicore shells, and a threshold on that table selects semicore.
+    Restricting to the block that holds E_F is what Zhang's integrated pDOS did,
+    and it is what makes the number mean "does this shell build the valence
+    manifold" rather than "does this element have core electrons".
+
+    window : (lo, hi).  Pass the SELECTION window.  None means all occupied
+        states, which is almost never what you want when semicore is present.
+
+    clip_to_fermi : False by default, and this matters.  Clipping to E_F counts
+        only occupied weight, which silently destroys any shell that is
+        essential but EMPTY -- Ti 3d in BaTiO3 has almost no occupied
+        population, so an occupied-only rule drops it and the model is wrong.
+        Zhang integrates over the whole gap-bounded window including the
+        conduction group, and that is the right behaviour.  Set True only if you
+        specifically want an occupancy rather than a window population.
+
+    renormalize : rescale so the channels sum to the number of states in the
+        window.  It removes the system-dependent span factor (Si reaches 85%,
+        CaMg2Bi2 72%), which is what makes one alpha work for both.  It does NOT
+        change the RANKING -- it is a single global factor, so it is exactly a
+        reparametrisation of alpha.  And it trades one dependence for another:
+        the fixed total is split among however many candidate blocks you
+        supplied, so widening `shells` lowers every fraction.  Off by default;
+        if you turn it on, keep `shells` fixed across a study.
+
+        NOTE this is global, not the per-state normalisation that was removed
+        from the sphere backend.  That one divided each BAND by its own total
+        and inflated poorly projected bands to full weight; this one cannot,
+        because it never reweights bands against each other.
+
+    spin_degeneracy : DISPLAY ONLY -- it converts the states column to electrons
+        and touches nothing else.  Selection is states/columns and `spanned` is
+        states over states, both spin-free.  None (default) prints no electron
+        column at all; pass 2 for a spin-paired calculation, where each band
+        holds two electrons, or 1 for a spinor or spin-polarised one.  It is not
+        inferred from the calculator here because this function never sees it.
+
+    Returns (N_states, n_states_in_window).
+    """
+    eps_kn = np.asarray(eps_kn)
+    wk = np.asarray(wk_k) / np.sum(wk_k)
+    lo = -np.inf if window is None else window[0]
+    hi = e_fermi if window is None else window[1]
+    if clip_to_fermi:
+        hi = min(hi, e_fermi)
+    mask = (eps_kn >= lo) & (eps_kn <= hi)
+
+    N = {key: float((wk[:, None] * np.asarray(v) * mask).sum())
+         for key, v in w.items()}
+    n_states = float((wk[:, None] * mask).sum())
+    if renormalize:
+        tot = sum(N.values())
+        if tot > 1e-30:
+            N = {k: v * n_states / tot for k, v in N.items()}
+    size = ({k: sl.stop - sl.start for k, sl in blocks} if blocks else
+            {k: 1 for k in N})
+
+    if verbose:
+        tot = sum(N.values())
+        head = f"({n_states:.2f} states"
+        if spin_degeneracy:
+            head += f", {spin_degeneracy * n_states:.1f} e at g_s={spin_degeneracy}"
+        print(f"  Loewdin populations over {lo:.3f} .. {hi:.3f} eV {head}):")
+        for key in sorted(N, key=lambda k: -N[k] / max(size[k], 1)):
+            name = labels.get(key, key) if labels else key
+            frac = N[key] / size[key] if size[key] else 0.0
+            tail = f"   ({spin_degeneracy * N[key]:6.3f} e)" if spin_degeneracy else ""
+            print(f"    {str(name):30s} {N[key]:7.3f} states / {size[key]:2d} "
+                  f"= {frac:6.1%}{tail}")
+        print(f"    {'TOTAL':30s} {tot:7.3f} states of {n_states:.3f}"
+              f"  ({tot / max(n_states, 1e-30):.1%} spanned)")
+    return N, n_states
+
+
+def select_by_occupancy(occupancy, blocks, n_states, alpha=0.45, verbose=True,
+                        labels=None):
+    """Keep channels ENRICHED relative to a uniform spread over all candidates.
+
+        density_k   = N_k / n_columns_k                 states per orbital
+        uniform     = n_states / sum_k n_columns_k      if spread evenly
+        enrichment  = density_k / uniform               keep if > alpha
+
+    WHY NOT THE RAW FRACTION.  N_k / n_columns_k looks tiny for a reason that
+    has nothing to do with chemistry: the window holds a few states and the
+    candidate set holds many orbitals, so the AVERAGE fraction is pinned at
+    n_states / n_columns.  GaN: 6.04 states over 36 columns, so the mean
+    possible fraction is 16.8% and Ga p at 8.3% is only half of average, not
+    "nearly zero".  Widening `shells` would push every fraction down further,
+    which means a raw-fraction alpha cannot transfer between materials OR
+    between candidate sets.  Dividing by the uniform density removes both
+    dependencies at once.
+
+    Calibrated across three materials at alpha = 0.45:
+
+        Si2       s 1.61, p 1.00 | d 0.10                     -> sp,       8 WF
+        GaN       N p 4.64, Ga s 0.97, Ga p 0.50 | N s 0.21   -> Np+Gasp, 14 WF
+        CaMg2Bi2  Bi p 2.02, Mg s 1.15, Ca d 1.03 | Mg p 0.35 -> 13 WF
+
+    The gap between kept and dropped is a factor of 2-3 in each case, so alpha
+    anywhere in roughly (0.4, 0.9) reproduces all three.  Note GaN's Ga p sits
+    at exactly 0.50: it is the tightest of the three, and it is the channel you
+    said you wanted, so 0.45 rather than 0.5.
+
+    Returns (chosen, nwann).
+    """
+    size = {k: sl.stop - sl.start for k, sl in blocks}
+    ncol = sum(size.values())
+    uniform = n_states / ncol if ncol else 0.0
+    if uniform <= 0:
+        raise ValueError("no states in the window")
+    chosen, nwann = set(), 0
+    rows = []
+    for key, _ in blocks:
+        dens = occupancy.get(key, 0.0) / size[key] if size[key] else 0.0
+        enr = dens / uniform
+        keep = enr > alpha
+        if keep:
+            chosen.add(key)
+            nwann += size[key]
+        rows.append((enr, key, dens, keep))
+    if verbose:
+        print(f"  enrichment vs a uniform spread "
+              f"({n_states:.2f} states / {ncol} columns = {uniform:.4f} "
+              f"states per orbital):")
+        for enr, key, dens, keep in sorted(rows, key=lambda r: -r[0]):
+            name = labels.get(key, key) if labels else key
+            print(f"  {'KEEP' if keep else 'drop'}  {str(name):30s} "
+                  f"{dens:6.1%} of capacity   enrichment {enr:5.2f}"
+                  f"   vs alpha={alpha}")
+        print(f"  -> nwann = {nwann}")
+    return chosen, nwann
+
+
+def orbital_window_fraction(A, S, blocks, target_mask, O=None, rcond=1e-8):
+    """{block: fraction of that orbital's OWN weight inside the window}.
+
+        f_M = sum_{n in window} |Atil_nM|^2  /  sum_n |Atil_nM|^2
+
+    The complement of coverage, and the only one of the two that can penalise.
+    Coverage asks how much of the BANDS lies in the orbital span, and is
+    monotone in the set -- adding an orbital can never lower it, so a useless
+    orbital costs nothing there but +1 to nwann. This asks how much of the
+    ORBITAL lies in the window, so a trial function whose weight sits outside it
+    scores low no matter what it does for coverage.
+
+    Read it as a diagnostic, not a filter. A low f_M means either (a) the orbital
+    is genuinely irrelevant to this manifold, or (b) the analytic trial function
+    is a poor stand-in for the atomic orbital you meant -- WannierBerri builds
+    them from Bessel functions with a default spread, so a diffuse s-like blob
+    overlaps whatever is nearby regardless of where the real atomic level sits.
+    tune_spread distinguishes the two.
+    """
+    A = np.asarray(A)
+    if O is not None:
+        A = np.stack([_inv_sqrt_herm(np.asarray(O[k]), rcond)[0] @ A[k]
+                      for k in range(A.shape[0])])
+    Sm12 = np.stack([_inv_sqrt_herm(np.asarray(S)[k], rcond)[0]
+                     for k in range(A.shape[0])])
+    At = np.einsum("knm,kmp->knp", A, Sm12)
+    w = (At.conj() * At).real                       # (nk, nb, nproj)
+    num = (w * np.asarray(target_mask)[:, :, None]).sum(axis=(0, 1))
+    den = w.sum(axis=(0, 1))
+    out = {}
+    for j, sl in blocks:
+        n = float(num[sl.start:sl.stop].sum())
+        d = float(den[sl.start:sl.stop].sum())
+        out[j] = n / d if d > 1e-30 else 0.0
+    return out

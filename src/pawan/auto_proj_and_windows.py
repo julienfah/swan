@@ -12,10 +12,9 @@ from gpaw.mpi import serial_comm, world
 from pawan.salc_M3 import build,describe_orbital,projectability_from_gpaw,site_group
 from pawan.extend_proj_set import extend_to_energy_window
 from pawan.utils import safety_check_windows
-from pawan.sphere_projection_method import sphere_projection_method
-from pawan.candidate_scan import candidate_scan, amn_projection_method
+#from pawan.candidate_scan import candidate_scan, amn_projection_method
+from pawan.zhang_amn import Zhang_projection_method_amn
 from wannierberri.w90files import WannierData
-from pawan.amn_projectability import  subset_projectability, greedy_select
 
 def get_proj_set(
     calc = None,
@@ -24,7 +23,7 @@ def get_proj_set(
     out_dir="test",
     in_dir="test",
     dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05},
-    gap_thres=0.1,
+    gap_thres=7,
     maximize_fw=False,
     objective_wd=None,
     hybridize_on_site=False,
@@ -43,6 +42,7 @@ def get_proj_set(
         maximize_fw=maximize_fw,
         objective_wd=objective_wd,
         comm=comm,
+        #from_gpaw=WannierData.from_gpaw,
         #alpha=0.3,
         #backend="sphere"
     )
@@ -73,21 +73,22 @@ def get_proj_set(
         p_kn, w, blocks, = res.eps_kn, res.w, res.blocks
         #print("candidate set:", cand_set)
         print("sum of p_kn:", np.sum(p_kn,axis=1), np.sum(p_kn,axis=0))"""
-        selected_orbitals, outer_win, frozen_win, nwann = amn_projection_method(
+        """selected_orbitals, outer_win, frozen_win, nwann = amn_projection_method(
             calc=calc, spacegroup=space_group, from_gpaw=WannierData.from_gpaw,
             seed=seed, in_dir=in_dir, out_dir=out_dir,
-            K=K, gap_thres=5.0, objective_wd=objective_wd, shells=(0, 1, 2),margin=1.1,verbose=True)
+            K=K, gap_thres=5.0, objective_wd=objective_wd, shells=(0, 1, 2),margin=1.1,verbose=True,alpha=0.33)
         print("selected orbitals after amn_projection_method:", selected_orbitals)
         print("outer_win:", outer_win, "frozen_win:", frozen_win, "nwann:", nwann)
-        print("-"*80,"\n")
+        print("-"*80,"\n")"""
         
         #exit()
         shells_dict = {calc.atoms[iatom].symbol: [l for iatom2, (n, l) in selected_orbitals if iatom2 == iatom] for iatom, (n, l) in selected_orbitals}
         weight_func = projectability_from_gpaw(calc, window=outer_win,n_select="valence")
-        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=None)
+        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=None,fallback="best_hybrid")
         assert proj_set.num_wann == nwann, \
         f"projection set has {proj_set.num_wann} WF but windows were sized for {nwann}"
         #proj_set = build(calc.atoms, shells_dict, prefix=f"{seed}_")
+
     else:
         projs = []
         # group atoms by species
