@@ -82,8 +82,9 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     if calc is None:
         calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     print("Building bandstructure...")
-    bandstructure = BandStructure(calculator_gpaw=calc, code="gpaw",
-                                Ecut=ecut, include_TR=True, spin_channel=0)
+    bandstructure = BandStructure.from_gpaw(calculator_gpaw=calc, code="gpaw",
+                                Ecut=ecut, include_TR=True, spin_channel=0)#(calculator_gpaw=calc, code="gpaw",
+                                #Ecut=ecut, include_TR=True, spin_channel=0)
     spacegroup = bandstructure.spacegroup
     if verbose:
         print(f"spacegroup: {spacegroup.number} {spacegroup.name}")
@@ -205,7 +206,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         print(f"  {p}")
         for l in empty_shells:
             trial_projections.add(Projection(position_sym=p, orbital=l,
-                                             spacegroup=spacegroup))
+                                             spacegroup=spacegroup, rotate_basis=True))
     #initial selection windows
 
     Emin_0, Emax_0, pdos, candidates = initial_DOS_energy_scan(

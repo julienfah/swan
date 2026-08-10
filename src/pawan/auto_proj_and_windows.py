@@ -84,7 +84,7 @@ def get_proj_set(
         #exit()
         shells_dict = {calc.atoms[iatom].symbol: [l for iatom2, (n, l) in selected_orbitals if iatom2 == iatom] for iatom, (n, l) in selected_orbitals}
         weight_func = projectability_from_gpaw(calc, window=outer_win,n_select="valence")
-        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=None,fallback="best_hybrid")
+        proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=None,fallback="minimal_shell")
         assert proj_set.num_wann == nwann, \
         f"projection set has {proj_set.num_wann} WF but windows were sized for {nwann}"
         #proj_set = build(calc.atoms, shells_dict, prefix=f"{seed}_")

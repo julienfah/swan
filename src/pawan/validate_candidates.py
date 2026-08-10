@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import traceback
 from pathlib import Path
+from gpaw.mpi import world, serial_comm
 
 import numpy as np
 
@@ -90,7 +91,7 @@ def combination_tag(c, blocks, trial_projections, atoms=None):
                     for s, o in sorted(per_site.items()))
 
 
-def dft_reference_bands(calc=None, bands_gpw=None, npoints=200, cache=None,
+def dft_reference_bands(in_dir,seed,calc=None, bands_gpw=None, npoints=200, cache=None,
                         spin=0, comm=None, txt=None):
     """(energies (1, nk, nbands), kpts) for the DFT reference path.
 
@@ -110,24 +111,26 @@ def dft_reference_bands(calc=None, bands_gpw=None, npoints=200, cache=None,
     if cache is not None and Path(cache).exists():
         z = np.load(cache)
         return z["energies"], z["kpts"]
-
-    if bands_gpw is not None:
+    else:
         from gpaw import GPAW
-        kw = {"txt": txt}
+        if txt is not None:
+            kw = {"txt": txt}
+        else:
+            kw = {}
         if comm is not None:
             kw["communicator"] = comm
-        bs = GPAW(str(bands_gpw), **kw).band_structure()
+        bs = GPAW(f"{in_dir}/{seed}/{seed}-bands.gpw", **kw).band_structure()
         e = np.asarray(bs.energies)          # (nspin, nk, nbands)
         kpts = np.asarray(bs.path.kpts)
-    elif calc is not None:
+    """elif calc is not None:
+        print("DFT reference bands not found, computing new ones...")
         path = calc.atoms.cell.bandpath(npoints=npoints)
         bs = calc.fixed_density(kpts=path.kpts, symmetry="off",
                                 txt=txt).band_structure()
         e = np.asarray(bs.energies)
         kpts = np.asarray(bs.path.kpts)
     else:
-        raise ValueError("pass bands_gpw or calc")
-
+        raise ValueError("pass bands_gpw or calc")"""
     if cache is not None:
         Path(cache).parent.mkdir(parents=True, exist_ok=True)
         np.savez(cache, energies=e, kpts=kpts)
@@ -201,10 +204,10 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
         if verbose:
             print(f"  DFT reference: {bands_gpw or 'fixed_density run'} "
                   "(computed once, shared by every candidate)")
-        dft_energies, dft_kpts = dft_reference_bands(
+        dft_energies, dft_kpts = dft_reference_bands(in_dir, seed,
             calc=calc, bands_gpw=bands_gpw, npoints=npoints,
-            spin=spin_channel, cache=root / "dft_bands.npz")
-
+            spin=spin_channel, cache=root / "dft_bands.npz",comm=serial_comm)
+    print("got DFT reference bands, validating candidates...")
     out = []
     for t in shortlist:
         c, cov, nwann = t[0], t[1], t[2]
