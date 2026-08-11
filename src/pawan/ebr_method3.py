@@ -72,19 +72,34 @@ def eig_from_bandstructure(amn, bandstructure):
 
 def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                verbose=False, comm=None, K=1.2, p_min=None, margin=2,
-               max_score=2000, min_gain=0.02, use_in_window=True, gap_thres=1,
+               max_score=2000, min_gain=0.02, use_in_window=False, gap_thres=1,
                objective_wd=None, include_empty=False, empty_shells=('s',),
                dedupe_prefer='hybrid', dedupe_rank_first=True,
                dedupe_by='span', band_gram=True,
                validate=False, validate_n_max=5, validate_kwargs=None,
-               eta_ok=20.0, spread_ok=10.0,hybrids=True):
-    """Uses an EBRsearcher to find symmetry adapted projections for a given system"""
+               eta_ok=20.0, spread_ok=10.0, hybrids=True,
+               per_size_window=True):                            # NEW
+    """Uses an EBRsearcher to find symmetry adapted projections for a given system
+
+    per_size_window : run one EBRsearcher per candidate SIZE, each with the
+        outer window that size will actually be wannierised in.
+
+        The outer window handed to the wannieriser is
+        find_emax_from_dos(..., n_wann=nwann, K=K) -- a function of nwann.
+        The one handed to EBRsearcher was Emax_0 from the DOS gap scan, which
+        does not depend on nwann at all. They are unrelated quantities, and the
+        mismatch is not symmetric: admissibility is MONOTONE in window size, so
+        a generous Emax_0 admits candidates that cannot satisfy the tighter
+        window they are later given. Sizing the search window per candidate
+        removes the gap by construction.
+
+        Set False to reproduce the single-window behaviour.
+    """
     if calc is None:
         calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     print("Building bandstructure...")
     bandstructure = BandStructure.from_gpaw(calculator_gpaw=calc, code="gpaw",
-                                Ecut=ecut, include_TR=True, spin_channel=0)#(calculator_gpaw=calc, code="gpaw",
-                                #Ecut=ecut, include_TR=True, spin_channel=0)
+                                Ecut=ecut, include_TR=True, spin_channel=0)
     spacegroup = bandstructure.spacegroup
     if verbose:
         print(f"spacegroup: {spacegroup.number} {spacegroup.name}")
@@ -190,14 +205,11 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     for p in selected_positions_str:
         if hybrids:
             pset,_ = build_at(atoms=calc.atoms,position=p.split(','),shells=['s','p','d'],spacegroup=spacegroup,label=f"WP_{p}_",verbose=True,fallback="minimal_shell")
-            """for o in ['d','pz', 'sp2']:
-                proj = Projection(position_sym=p, orbital=o, spacegroup=spacegroup)
-                trial_projections.add(proj)"""
             for proj in pset.projections:
                 trial_projections.add(proj)
         for l in ['s', 'p', 'd']:
             proj = Projection(position_sym=p, orbital=l, spacegroup=spacegroup)
-            trial_projections.add(proj)
+            #trial_projections.add(proj)
 
     if empty_positions:
         print(f"Empty Wyckoff positions added, shells {tuple(empty_shells)}:")
@@ -222,17 +234,10 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
 
     print(f"Initial energy windows: froz_min={froz_min}, froz_max={froz_max}, outer_min={Emin_0}, outer_max={Emax_0}")
     print(trial_projections.write_with_multiplicities(orbit=False))
-    print("Running EBRsearcher...")
-    ebrsearcher = EBRsearcher(
-        symmetrizer=symmetrizer,
-        trial_projections_set=trial_projections,
-        froz_min=froz_min,
-        froz_max=froz_max,
-        outer_min=Emin_0,
-        outer_max=Emax_0,
-        debug=False # set to True to see more printed information
-    )
 
+    # ---- MOVED UP: the search window is now a function of nwann, so the band
+    # counts and the size cap have to exist before any EBRsearcher is built.
+    #
     # Cap nwann by the FROZEN MANIFOLD, not by n_bands. n_bands never binds, so
     # the search enumerates every subset the irreps allow: BaTiO3 gave 879224.
     # You never want more Wannier functions than ~margin x the bands that must
@@ -244,7 +249,71 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     num_wann_max = int(ceil(margin * n_froz))
     print(f"Frozen manifold holds {n_froz} bands at the worst k "
           f"-> num_wann_max = {num_wann_max}")
-    combinations = ebrsearcher.find_combinations(num_wann_max=num_wann_max)
+
+    # MOVED UP: the per-size search windows use the SAME estimator as the
+    # wannierisation windows, so the dos has to be available before the search.
+    energies, dos = calc.get_dos(spin=0, npts=1001, width=0.05)
+
+    nw_of_proj = [p.num_wann for p in trial_projections.projections]
+
+    def nwann_of(c):
+        return int(sum(int(v) * n for v, n in zip(np.asarray(c, int), nw_of_proj)))
+
+    def _searcher(outer_max):
+        return EBRsearcher(
+            symmetrizer=symmetrizer,
+            trial_projections_set=trial_projections,
+            froz_min=froz_min,
+            froz_max=froz_max,
+            outer_min=Emin_0,
+            outer_max=outer_max,
+            debug=False,  # set to True to see more printed information
+        )
+
+    outer_max_of = {}          # nwann -> the outer top that size is judged in
+    if per_size_window:
+        # A candidate of nwann functions will be wannierised in
+        # (Emin_0, find_emax_from_dos(..., nwann, K)), so that is the window
+        # it must be admissible in. Enumerating size by size is the only way to
+        # give each one its own: EBRsearcher takes a single outer_max, and
+        # admissibility is monotone in it, so one shared generous window lets
+        # through sets that fail their real one.
+        print("Running EBRsearcher per size (window sized from K x nwann)...")
+        combinations, seen = [], set()
+        for nw in range(n_froz, num_wann_max + 1):
+            # SAME estimator as the wannierisation window below, so the only
+            # thing this experiment changes is that the SEARCH window now
+            # tracks nwann instead of coming from the DOS gap scan.
+            emax_nw = find_emax_from_dos(energies=energies, dos_total=dos,
+                                         n_wann=nw, emin=Emin_0, K=K)
+            outer_max_of[nw] = emax_nw
+            found = _searcher(emax_nw).find_combinations(num_wann_max=nw)
+            new = 0
+            for c in found:
+                if nwann_of(c) != nw:
+                    continue          # smaller sets already had their own pass
+                key = tuple(int(v) for v in np.asarray(c, int))
+                if key in seen:
+                    continue
+                seen.add(key)
+                combinations.append(c)
+                new += 1
+            print(f"  nwann={nw:3d}  outer_max={emax_nw:8.3f} eV  "
+                  f"-> {new} combinations")
+        if not outer_max_of:
+            raise RuntimeError(
+                f"the size sweep produced no windows: n_froz={n_froz} > "
+                f"num_wann_max={num_wann_max}?")
+        # dedupe_combinations wants a searcher for irrep bookkeeping; the widest
+        # window is the safe one to hand it, since it admits every candidate we
+        # kept.
+        ebrsearcher = _searcher(max(outer_max_of.values()))
+    else:
+        print("Running EBRsearcher...")
+        ebrsearcher = _searcher(Emax_0)
+        combinations = ebrsearcher.find_combinations(num_wann_max=num_wann_max)
+        for nw in range(n_froz, num_wann_max + 1):
+            outer_max_of[nw] = Emax_0
     print(f"Found {len(combinations)} combinations")
 
     if verbose and len(combinations) <= 50:
@@ -282,9 +351,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
               "ranking is not trustworthy")
     S = np.asarray(S)
     if not np.isfinite(S).all():
-        bad = sorted({j for j, p in enumerate(trial_projections.projections)
-                      for k in range(S.shape[0])
-                      if not np.isfinite(S[k]).all()})
         cols_bad = np.where(~np.isfinite(S).all(axis=(0, 1)))[0]
         raise RuntimeError(
             f"the trial-orbital overlap has NaN/Inf in columns "
@@ -309,7 +375,15 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
 
     wk_k = np.full(A.shape[0], 1.0 / A.shape[0])
     target = (eps_kn >= froz_min) & (eps_kn <= froz_max)
-    outer = (eps_kn >= Emin_0) & (eps_kn <= Emax_0)
+
+    def outer_mask_for(nw):
+        """The band mask a candidate of `nw` functions is actually judged in."""
+        top = outer_max_of.get(nw, max(outer_max_of.values()))
+        return (eps_kn >= Emin_0) & (eps_kn <= top)
+
+    # widest window: used for the selection log and for the shortlist filter,
+    # where a single per-block in_window vector is expected
+    outer = outer_mask_for(max(outer_max_of))
 
     kept = dedupe_combinations(S, blocks, combinations, trial_projections,
                                prefer=dedupe_prefer,
@@ -325,21 +399,35 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         print(f"  scoring the {max_score} smallest of {len(cand)} distinct "
               "combinations")
         cand = cand[:max_score]
+
+    # SCORE EACH SIZE IN ITS OWN WINDOW. in_window is the fraction of an
+    # orbital's weight inside the OUTER window, so it moves with the window;
+    # scoring every candidate against the widest one would report an in_window
+    # no small candidate actually gets.
     in_window = orbital_window_fraction(A, S, blocks, outer, O=O)
-    scored = score_combinations(A, S, blocks, cand, target, wk_k, O=O,
-                                in_window=in_window)
+    by_size = {}
+    for c in cand:
+        by_size.setdefault(nwann_of(c), []).append(c)
+    scored = []
+    for nw in sorted(by_size):
+        iw_nw = (in_window if not per_size_window
+                 else orbital_window_fraction(A, S, blocks, outer_mask_for(nw),
+                                              O=O))
+        scored += score_combinations(A, S, blocks, by_size[nw], target, wk_k,
+                                     O=O, in_window=iw_nw)
+
     labels = [str(p) for p in trial_projections.projections]
     ranked, info = rank_combinations(scored, p_min=p_min, min_gain=min_gain,
                                      use_in_window=use_in_window, labels=labels)
     selected_combination = ranked[0][0]
     selected_proj_set = trial_projections.get_combination(selected_combination)
     selected_proj_set.join_same_wyckoff()
-    #selected_proj_set.maximize_distance()
     print("Selected projection set:")
     print(selected_proj_set.write_with_multiplicities(orbit=False))
-    #refined_emax = emax_from_band_count(emin=Emin_0,nwann=selected_proj_set.num_wann)
-    energies,dos =calc.get_dos(spin=0,npts=1001,width=0.05)
-    refined_emax = find_emax_from_dos(energies=energies,dos_total=dos, n_wann=selected_proj_set.num_wann, emin=Emin_0,K=K)
+
+    refined_emax = find_emax_from_dos(energies=energies, dos_total=dos,
+                                      n_wann=selected_proj_set.num_wann,
+                                      emin=Emin_0, K=K)
     froz_window = (froz_min, froz_max)
     outer_window = (Emin_0, refined_emax)
     log_orbitals(selected_proj_set,outer_window,froz_window,selected_proj_set.num_wann, seed, out_dir)
@@ -388,6 +476,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                                 if not np.array_equal(t[0], selected_combination)]
 
         def outer_for(nwann):
+            # identical to the window the search judged this size in
             emax = find_emax_from_dos(energies=energies, dos_total=dos,
                                       n_wann=nwann, emin=Emin_0, K=K)
             return (Emin_0, emax)
@@ -451,6 +540,7 @@ def wyckoff_contains(wpos, position, tol=1e-4):
         return bool(np.any(np.all(np.abs(diffs) < tol, axis=1)))
     else:
         return wpos.contains_position(position) is not None
+
 def log_orbitals(proj_set,outer_win,frozen_win,nwann, seed, out_dir):
 # log the selected orbitals and the windows
     log_file_path = Path_(f"{out_dir}/{seed}/orbitals_and_windows.txt")
