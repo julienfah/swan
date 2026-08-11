@@ -209,7 +209,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                 trial_projections.add(proj)
         for l in ['s', 'p', 'd']:
             proj = Projection(position_sym=p, orbital=l, spacegroup=spacegroup)
-            #trial_projections.add(proj)
+            trial_projections.add(proj)
 
     if empty_positions:
         print(f"Empty Wyckoff positions added, shells {tuple(empty_shells)}:")
