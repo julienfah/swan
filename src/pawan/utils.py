@@ -465,4 +465,18 @@ def parse_args():
         dest="EBR",
         help="Use EBR method to determine projections and windows (default: False)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=None,
+        dest="verbose",
+        help="Print verbose output (default: False)"
+    )
+    parser.add_argument(
+        "--alphabet",
+        type=str,
+        default=None,
+        dest="alphabet",
+        help="Alphabet for EBR method (default: shells+hyb)",
+    )
     return parser.parse_args()

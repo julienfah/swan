@@ -58,21 +58,41 @@ def combination_irreps(searcher, c):
                  for block in vecs)
 
 
-def _n_hybrid(trial_set, c):
-    """How many chosen projections are registered hybrids (heuristic tie-break).
+def _n_hybrid(trial_set, c, atol=1e-8):
+    """Wannier functions living in genuinely MIXED blocks (gauge tie-break).
 
-    A hybrid orbital name is not a plain shell, so anything not in 'spdf' or a
-    single-orbital label counts as a composite/SALC type.
+    "Hybrid" here means one thing only: does a trial function mix different
+    (l, m)? That is what makes it a bond-pointing lobe rather than an
+    axis-aligned harmonic, and it is the whole reason the preference exists --
+    equal-span descriptions differ only in gauge, and a lobe is the better
+    initial guess.
+
+    THE OLD TEST WAS `str(o) not in {"s","p","d","f"}`, which breaks in two ways
+    once the alphabet contains isotypic components:
+
+      * a component like `CMP_..__p0` (= px, py) is not a plain shell name, so
+        it counted as a hybrid -- but its members are unit vectors in the shell
+        basis, i.e. exactly as unhybridised as `p` itself;
+      * the count was per PROJECTION, so splitting a site into more blocks
+        raised the score. On GaN's N site the two equal-span descriptions
+        scored s + CMP_p0 + CMP_p1 -> (2, -3) against WP__hyb -> (1, -1), and
+        max() took the components. Index 5 and 13 -- the only two true hybrids
+        in that alphabet -- never appeared in a single surviving combination.
+
+    Counting mixed Wannier FUNCTIONS fixes both: components score 0, the sp3-like
+    block scores 4.
     """
-    plain = {"s", "p", "d", "f"}
+    from wannierberri.symmetry import orbitals as wb_orb
     n = 0
     for cj, proj in zip(np.asarray(c, int), trial_set.projections):
         if cj <= 0:
             continue
         for o in getattr(proj, "orbitals", []):
-            if str(o) not in plain:
-                n += int(cj)
-                break
+            for member in wb_orb.orbitals_sets_dic.get(str(o), [str(o)]):
+                coef = wb_orb.hybrids_coef.get(member)
+                if coef is not None and sum(abs(v) > atol
+                                            for v in coef.values()) > 1:
+                    n += int(cj)
     return n
 
 
