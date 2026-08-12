@@ -82,6 +82,8 @@ def auto_workflow(
     only_wannier=False,
     hybridize_on_site=False,
     EBR=False,
+    alphabet="shells+hyb",
+    verbose=False
 ):
     """if not skip_scf:
         scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
@@ -139,7 +141,7 @@ def auto_workflow(
                     hybridize_on_site=hybridize_on_site,
                 )
             else:
-                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=500, comm=serial_comm, only_on_site=True, verbose=False,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,hybrids=hybridize_on_site)
+                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=500, comm=serial_comm, only_on_site=True, verbose=verbose,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,hybrids=hybridize_on_site,alphabet=alphabet)
 
             if not skip_wannier:
                 unitary_params = dict(
