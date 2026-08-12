@@ -1,3 +1,29 @@
+"""Same as before, plus an `alphabet` switch.
+
+  'as_is'     build_at's blocks (hyb + rests) PLUS whole s/p/d shells --
+              what this file did already, no hybridisation step.
+  'shells'    plain s/p/d only in the SEARCH, hybridised before validation.
+  'isotypic'  per-shell irrep blocks in the SEARCH, hybridised before validation.
+
+For 'shells' and 'isotypic' the hybridisation is SPAN PRESERVING: it only fires
+at a site whose selected blocks are exactly a sum of whole shells, and it keeps
+build_at's output only when a real bond hybrid came out (res.hybrid). When
+build_at finds no hybrid it falls through to isotypic components, and shipping
+those in place of a complete shell is a strict loss -- same span, but a split,
+per-site-rotated gauge for no localisation gain -- so the original blocks are
+kept instead.
+
+It happens BEFORE validation, not after: the span fixes the disentangled
+subspace and Omega_I, but not Omega_D + Omega_OD, and maximal localisation is
+non-convex -- so the starting gauge decides which minimum is reached, and eta_2
+measures interpolation, which depends on it. Validating the un-hybridised set
+would measure something other than what is returned.
+
+NOTE 'shells' cannot reach BaTiO3's 12-WF answer (O p + Ti t_2g): hybridisation
+preserves span, so a shell alphabet can only ever select sums of whole shells,
+and Ti d is 5 not 3. Use 'isotypic' if that answer matters.
+"""
+
 from irrep.bandstructure import BandStructure
 from irrep.spacegroup import SpaceGroup
 import irrep.spacegroup as irrep_spacegroup
@@ -7,6 +33,7 @@ from wannierberri.symmetry.sawf import SymmetrizerSAWF
 from wannierberri.symmetry.projections_searcher import EBRsearcher
 from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from wannierberri.symmetry.wyckoff_position import WyckoffPosition
+from wannierberri.symmetry import orbitals as wb_orb
 from wannierberri.w90files.amn import AMN
 import numpy as np
 from gpaw import GPAW
@@ -14,7 +41,9 @@ from math import ceil
 from pathlib import Path as Path_
 from pawan.utils import find_emax_from_dos
 from pawan.auto_proj_and_windows import initial_DOS_energy_scan
-from pawan.salc_M4 import build_at, describe_orbital
+from pawan.salc_M4 import (NAME_OF, build_at, describe_orbital,
+                           isotypic_components, parse_position, parse_shells,
+                           register, shell_rep, site_group)
 from pawan.amn_projectability import orbital_window_fraction, true_overlap
 from pawan.candidate_scan import _stack_payload
 from pawan.ebr_select import (dedupe_combinations, rank_combinations,
@@ -24,37 +53,20 @@ from pawan.validate_candidates import combination_tag
 
 x, y, z = symbols('x y z')
 _locals = {'x': x, 'y': y, 'z': z}
-"""
-irrep PR:
-sympy.sympify('2x')   # -> SympifyError
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
-parse_expr('2x', local_dict={'x': sympy.Symbol('x')},
-           transformations=standard_transformations + (implicit_multiplication_application,))
-# -> 2*x, works fine
 
-WB PR:
-uncomment line in clear_cached_properties in ProjectionsSet to clear _free_vars and num_wann_per_site, which are cached properties that depend on the free variables of the Wyckoff position. This is necessary because the free variables can change when the Wyckoff position is modified, and we want to ensure that the cached properties are updated accordingly.
-
-"""
 import re
+import copy
 from sympy import sympify as _sympify_orig
 
 def _sympify_implicit_mult(s, *args, **kwargs):
     if isinstance(s, str):
-        s = re.sub(r'(?<=[\d)])(?=[a-zA-Z])', '*', s)  # "2x" -> "2*x", "2(x+y)" -> "2*(x+y)"
+        s = re.sub(r'(?<=[\d)])(?=[a-zA-Z])', '*', s)
     return _sympify_orig(s, *args, **kwargs)
 irrep_spacegroup.sympify = _sympify_implicit_mult
 
 
 def eig_from_bandstructure(amn, bandstructure):
-    """(nk, nb) eigenvalues in the SAME order _stack_payload stacks amn.data.
-
-    Taken from the bandstructure rather than from calc.get_eigenvalues: the amn
-    lives on the irreducible k-set of `bandstructure`, whose ordering need not
-    match GPAW's, and pairing projectabilities with the wrong eigenvalues would
-    misplace every band silently. Uses the positional mapping, which is the one
-    true_overlap verifies against amn.data.
-    """
+    """(nk, nb) eigenvalues in the SAME order _stack_payload stacks amn.data."""
     keys = sorted(amn.data) if isinstance(amn.data, dict) else range(len(amn.data))
     out = []
     for i, _ in enumerate(keys):
@@ -65,35 +77,186 @@ def eig_from_bandstructure(amn, bandstructure):
                 break
         else:
             raise AttributeError(
-                f"no energy attribute on {type(kp)}; tried Energy/energies/E. "
-                f"Available: {[a for a in dir(kp) if 'ner' in a.lower()]}")
+                f"no energy attribute on {type(kp)}; tried Energy/energies/E.")
     return np.array(out)
+
+
+# ---------------------------------------------------------------------------
+# alphabet helpers
+# ---------------------------------------------------------------------------
+
+def _block_rows(name, shells_l):
+    """Rows of a registered or plain orbital block in the joint shell layout."""
+    labels = [o for l in shells_l for o in wb_orb.orbitals_sets_dic[NAME_OF[l]]]
+    rows = []
+    for member in wb_orb.orbitals_sets_dic[str(name)]:
+        coef = wb_orb.hybrids_coef.get(member)
+        if coef is None:
+            rows.append([1.0 if o == member else 0.0 for o in labels])
+        else:
+            rows.append([float(coef.get(o, 0.0)) for o in labels])
+    return np.array(rows, float)
+
+
+def shell_component_blocks(cell, pos_str, shells, prefix="CMP"):
+    """Irrep blocks of EACH SHELL separately at one site.
+
+    Per shell, not on the joint s+p+d space: a joint decomposition merges
+    everything carrying the same irrep across shells (at C_3v a1 lives in s,
+    p_z AND d_z2), and pure s stops being selectable. Per shell every block sits
+    inside one shell, so each shell is exactly the sum of its own components --
+    nothing a plain shell could reach is lost, and a shell that splits gains
+    resolution it did not have (at O_h, d -> e_g + t_2g).
+
+    Returns [(orbital_name, dim), ...]; a shell that does not split keeps its
+    plain name, so nothing is registered for it.
+    """
+    q = parse_position(pos_str.split(',')) % 1.0
+    ops = site_group(cell, q)
+    out = []
+    for l in parse_shells(shells):
+        comps = isotypic_components([shell_rep([l], R) for R in ops])
+        if len(comps) == 1:
+            out.append((NAME_OF[l], 2 * l + 1))
+            continue
+        for k, (M, _d, _n) in enumerate(comps):
+            # `__` is load bearing: validate_candidates._orb_short splits on it,
+            # so only 'd0' reaches the tag and hence the candidate directory.
+            nm = f"{prefix}_{pos_str}__{NAME_OF[l]}{k}"
+            register(nm, M, [l], ops)
+            out.append((nm, M.shape[0]))
+    return out
+
+
+def hybridize_combination(c, trial_projections, site_of, atoms, spacegroup,
+                          shells_l, prefer_plain_shell=True, verbose=False):
+    """Rewrite a selected combination as bond hybrids, preserving every span.
+
+    A site is hybridised only when its selected blocks are EXACTLY a sum of
+    whole shells -- build_at needs the full (2l+1)-dimensional space to solve
+    the intertwiner in, and a partial selection (t_2g alone) has no full shell
+    to re-express. Anything else is passed through untouched.
+    """
+    c = np.asarray(c, int)
+    by_site = {}
+    for j, s in enumerate(site_of):
+        if c[j] > 0:
+            by_site.setdefault(s, []).append(j)
+
+    out = ProjectionsSet()
+    for site, idxs in sorted(by_site.items()):
+        rows = np.vstack([_block_rows(o, shells_l)
+                          for j in idxs
+                          for o in trial_projections.projections[j].orbitals])
+        P = rows.T @ rows
+        # which shells are covered in FULL, and is the span exactly those?
+        full, Q, off = [], np.zeros_like(P), 0
+        for l in shells_l:
+            n = 2 * l + 1
+            if np.allclose(P[off:off + n, off:off + n], np.eye(n), atol=1e-6):
+                full.append(l)
+                Q[off:off + n, off:off + n] = np.eye(n)
+            off += n
+        done = False
+        if full and np.allclose(P, Q, atol=1e-6):
+            # The span is exactly whole shells, so THREE descriptions of it
+            # exist and they are not equally safe. In order:
+            #
+            #  1. bond hybrid   -- localised lobes, the best initial guess;
+            #  2. plain shell   -- FRAME INDEPENDENT: position_sym, no
+            #     rotate_basis, every site of the orbit using the same global
+            #     p_x/p_y/p_z, so the per-site rotation is never invoked;
+            #  3. components    -- frame DEPENDENT, must be rotated into each
+            #     site's own frame.
+            #
+            # SrTiO3 is why the order matters. Its O site has two COLLINEAR Ti
+            # neighbours, where the polar decomposition breaks the intertwiner
+            # space, so build_at declines (res.hybrid False). Falling through to
+            # the components then ships three rotated blocks on a 3-point orbit
+            # whose 4-fold axes lie along x, y and z -- same span, same windows,
+            # same 12 WF as the working run, and eta ~800 against a good result
+            # for plain `p`. The shell is the safe middle option and must be
+            # preferred over the components, not reached only as a last resort.
+            pset, res = build_at(atoms=atoms, position=site.split(','),
+                                 shells=[NAME_OF[l] for l in full],
+                                 spacegroup=spacegroup,
+                                 label=f"HYB_{site}_", verbose=False,
+                                 fallback="minimal_shell")
+            if getattr(res, "hybrid", False):
+                for pr in pset.projections:
+                    out.add(pr)
+                done = True
+                if verbose:
+                    print(f"    hybridised {site}: "
+                          f"{''.join(NAME_OF[l] for l in full)}")
+            elif prefer_plain_shell:
+                for l in full:
+                    out.add(Projection(position_sym=site, orbital=NAME_OF[l],
+                                       spacegroup=spacegroup))
+                done = True
+                if verbose:
+                    print(f"    {site}: no bond hybrid -> plain "
+                          f"{''.join(NAME_OF[l] for l in full)}")
+        if not done:
+            for j in idxs:
+                # DEEPCOPY. join_same_wyckoff() merges projections IN PLACE, so
+                # adding the alphabet's own objects lets it mutate
+                # trial_projections: afterwards num_wann and combination_tag
+                # read back wrong for every later candidate. Everywhere else in
+                # the pipeline projections reach a set through get_combination,
+                # which copies; this was the only path handing over originals.
+                out.add(copy.deepcopy(trial_projections.projections[j]))
+
+    # DO NOT JOIN. join_same_wyckoff() only GROUPS blocks that share a site
+    # under one Projection -- it is not a basis change and buys nothing here --
+    # but a joined projection orders its columns SITE-MAJOR
+    # (site0[p0,p1,p1], site1[...], ...) while WannierBerri builds D_wann
+    # block-diagonal PER ORBITAL. It says so itself: "has more than one orbital,
+    # it will be split into separate blocks, please order them in the win file
+    # consistently". For p0 + p1 on SrTiO3's 3-site O orbit that means a (3,3)
+    # and a (6,6) block, expecting all of p0 first; joined, p0 sits at columns
+    # 0, 3, 6 and the (3,3) block lands on 0, 1, 2.
+    #
+    # Everything else about that set is right, which is why it was hard to
+    # find: the amn spans the same subspace at every k, D_wann has identical
+    # characters for all 96 operations, and both are unitary to 9e-16. Only the
+    # correspondence between columns and blocks is wrong -- and that is exactly
+    # what makes symmetrisation grind for ten iterations without converging.
+    #
+    # Unjoined, every projection carries ONE orbital, so its columns are
+    # contiguous and match its block, always. On a 1-point orbit the joined and
+    # unjoined orderings are the same list, so this loses nothing there either
+    # -- which is also why MnTe's Mn (hyb+rest0+rest1) and SrTiO3's Ti
+    # (CMP_d0) never showed the problem.
+    return out
 
 
 def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                verbose=False, comm=None, K=1.2, p_min=None, margin=2,
-               max_score=2000, min_gain=0.02, use_in_window=False, gap_thres=1,
+               max_score=5000, min_gain=0.02, use_in_window=False, gap_thres=1,
                objective_wd=None, include_empty=False, empty_shells=('s',),
                dedupe_prefer='hybrid', dedupe_rank_first=True,
                dedupe_by='span', band_gram=True,
                validate=False, validate_n_max=5, validate_kwargs=None,
                eta_ok=20.0, spread_ok=10.0, hybrids=True,
-               per_size_window=True):                            # NEW
+               per_size_window=True,
+               alphabet='isotypic',  # 'as_is' | 'shells' | 'isotypic'
+               prefer_plain_shell=False):                        # NEW
     """Uses an EBRsearcher to find symmetry adapted projections for a given system
+
+    prefer_plain_shell : when a site's span is a complete shell but build_at
+        finds no bond hybrid, ship the plain shell instead of the component
+        blocks. True is the safe default. Set False to FORCE the component
+        path -- the only way to test whether unjoined components on a
+        multi-point orbit now work, since with True that branch is never
+        reached (SrTiO3's O declines the hybrid and falls straight to plain p).
+
+    alphabet : 'as_is' | 'shells' | 'isotypic'.  See the module docstring.
+        'shells' and 'isotypic' hybridise the chosen set (span preserving)
+        BEFORE validation, so the set measured by eta is the set returned.
 
     per_size_window : run one EBRsearcher per candidate SIZE, each with the
         outer window that size will actually be wannierised in.
-
-        The outer window handed to the wannieriser is
-        find_emax_from_dos(..., n_wann=nwann, K=K) -- a function of nwann.
-        The one handed to EBRsearcher was Emax_0 from the DOS gap scan, which
-        does not depend on nwann at all. They are unrelated quantities, and the
-        mismatch is not symmetric: admissibility is MONOTONE in window size, so
-        a generous Emax_0 admits candidates that cannot satisfy the tighter
-        window they are later given. Sizing the search window per candidate
-        removes the gap by construction.
-
-        Set False to reproduce the single-window behaviour.
     """
     if calc is None:
         calc = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
@@ -113,7 +276,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     symmetrizer = SymmetrizerSAWF.from_irrep(bandstructure, irreducible=True,unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=n_skipped_bands))
 
     trial_projections = ProjectionsSet()
-    #select positions to consider for projections
     cell = calc.atoms.cell
     atomic_positions = calc.atoms.get_scaled_positions()
     numbers = calc.atoms.numbers
@@ -124,11 +286,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     selected_positions = []
 
     if only_on_site:
-        # One projection per symmetry ORBIT, not per atom and not per Wyckoff
-        # letter. A Projection built with position_num generates the whole orbit
-        # from the space group, so symmetry-equivalent atoms need a single
-        # entry; two INEQUIVALENT atoms sharing a letter with different free
-        # parameters are different orbits and each need one.
         import spglib
         _ds = spglib.get_symmetry_dataset(
             (np.array(cell), atomic_positions, numbers), symprec=1e-4)
@@ -145,22 +302,12 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             if candidates:
                 mult, pos, wpos = min(candidates, key=lambda c: c[0])
                 if wpos.num_free_vars > 0:
-                    # PIN the free parameter to this atom. The atom is a point
-                    # of the orbit, so the site group at its coordinates is
-                    # exactly the Wyckoff position's and the SALCs are right.
-                    # Symbolic positions cannot be handed to build_at -- (x,0,1/2)
-                    # has no single site group until x is chosen -- so without
-                    # this those sites get plain shells and no hybrids.
-                    # Side effect: num_free_vars becomes 0, hence
-                    # proj_max_multiplicity 1 and nothing for maximize_distance
-                    # to move, which is what you want for an on-site projection.
                     pos = [float(v) for v in atomic_pos]
                     print(f"  {calc.atoms[atom_idx].symbol}{atom_idx}: Wyckoff "
                           f"position has {wpos.num_free_vars} free parameter(s)"
                           f" -> pinned to the atom at "
                           f"{np.round(atomic_pos, 6).tolist()}")
                 selected_positions.append(list(pos))
-        # safety: two orbits can still land on the same fixed position
         seen, uniq = set(), []
         for p in selected_positions:
             k = ",".join(str(v) for v in p)
@@ -171,17 +318,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     else:
         selected_positions = WP
 
-    # EMPTY Wyckoff positions. The frozen manifold can need an irrep that no
-    # ATOMIC orbital supplies well: BaTiO3 needs one A1g beyond Ti t2g + O p,
-    # and every atomic candidate for it is unreachable (Ti s at 16.6%
-    # in-window, Ba s at 10.1%). An interstitial s at an empty site can carry
-    # it with a far higher in-window fraction -- the obstructed-atomic-limit
-    # case, and the reason EBRsearcher supports empty positions at all.
-    #
-    # FIXED positions only: one with a free parameter has no single site group
-    # until x is chosen, so build_at cannot act on it and EBRsearcher would have
-    # to optimise x afterwards. `empty_shells` defaults to s alone, to keep the
-    # alphabet -- and hence the combination count -- small.
     empty_positions = []
     if include_empty:
         occupied = {tuple(str(v) for v in p) for p in selected_positions}
@@ -193,7 +329,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             wpos = WyckoffPosition(position_str=",".join(str(p) for p in pos),
                                    spacegroup=spacegroup)
             if any(wyckoff_contains(wpos, ap) for ap in atomic_positions):
-                continue                      # coincides with an atom
+                continue
             empty_positions.append(pos)
 
     selected_positions_str = [",".join(str(y) for y in x) for x in selected_positions]
@@ -201,15 +337,58 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     print("Selected positions for projections:")
     for p in selected_positions_str:
         print(p)
-    # select orbitals for each position
+
+    # ---- ALPHABET ---------------------------------------------------------
+    shells_l = parse_shells(['s', 'p', 'd'])
+    cell_t = (np.array(cell[:]), atomic_positions, numbers)
+    site_of = []                    # site label per projection index
+    print(f"alphabet = {alphabet!r}")
     for p in selected_positions_str:
-        if hybrids:
-            pset,_ = build_at(atoms=calc.atoms,position=p.split(','),shells=['s','p','d'],spacegroup=spacegroup,label=f"WP_{p}_",verbose=True,fallback="minimal_shell")
-            for proj in pset.projections:
-                trial_projections.add(proj)
-        for l in ['s', 'p', 'd']:
-            proj = Projection(position_sym=p, orbital=l, spacegroup=spacegroup)
-            trial_projections.add(proj)
+        if alphabet == 'as_is':
+            # hybrids AND whole shells. The two are not redundant: build_at's
+            # blocks are the hybrid plus irrep-adapted complements, which no
+            # sum of shells reproduces when the hybrid mixes shells, while the
+            # shells cover sizes the hybrid family cannot reach on its own
+            # (at an O_h site build_at gives sp3d2 + t_2g, so the reachable
+            # sizes are {0,3,6,9} and NaCl's Cl 3s+3p = 4 is not expressible).
+            if hybrids:
+                pset, _ = build_at(atoms=calc.atoms, position=p.split(','),
+                                   shells=['s', 'p', 'd'],
+                                   spacegroup=spacegroup, label=f"WP_{p}_",
+                                   verbose=True, fallback="minimal_shell")
+                for proj in pset.projections:
+                    trial_projections.add(proj)
+                    site_of.append(p)
+            for l in ['s', 'p', 'd']:
+                trial_projections.add(Projection(position_sym=p, orbital=l,
+                                                 spacegroup=spacegroup))
+                site_of.append(p)
+        elif alphabet == 'shells':
+            for l in ['s', 'p', 'd']:
+                trial_projections.add(Projection(position_sym=p, orbital=l,
+                                                 spacegroup=spacegroup))
+                site_of.append(p)
+        elif alphabet == 'isotypic':
+            q_p = parse_position(p.split(',')) % 1.0
+            for name, dim in shell_component_blocks(cell_t, p, ['s', 'p', 'd']):
+                if name in ('s', 'p', 'd'):
+                    # a whole shell is FRAME INDEPENDENT: position_sym, no
+                    # rotate_basis, every site of the orbit using the same
+                    # global p_x/p_y/p_z.
+                    trial_projections.add(Projection(position_sym=p,
+                                                     orbital=name,
+                                                     spacegroup=spacegroup))
+                else:
+                    # a split block is not: it must be rotated into each site's
+                    # own frame.
+                    trial_projections.add(Projection(position_num=[q_p],
+                                                     orbital=name,
+                                                     spacegroup=spacegroup,
+                                                     rotate_basis=True))
+                site_of.append(p)
+        else:
+            raise ValueError(f"alphabet must be 'as_is', 'shells' or "
+                             f"'isotypic', got {alphabet!r}")
 
     if empty_positions:
         print(f"Empty Wyckoff positions added, shells {tuple(empty_shells)}:")
@@ -219,7 +398,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         for l in empty_shells:
             trial_projections.add(Projection(position_sym=p, orbital=l,
                                              spacegroup=spacegroup, rotate_basis=True))
-    #initial selection windows
+            site_of.append(p)
 
     Emin_0, Emax_0, pdos, candidates = initial_DOS_energy_scan(
         calc=calc, out_dir=out_dir, in_dir=in_dir, seed=seed, dos_kwargs={"spin": 0, "npts": 1001, "width": 0.05}, gap_thres=gap_thres
@@ -235,14 +414,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     print(f"Initial energy windows: froz_min={froz_min}, froz_max={froz_max}, outer_min={Emin_0}, outer_max={Emax_0}")
     print(trial_projections.write_with_multiplicities(orbit=False))
 
-    # ---- MOVED UP: the search window is now a function of nwann, so the band
-    # counts and the size cap have to exist before any EBRsearcher is built.
-    #
-    # Cap nwann by the FROZEN MANIFOLD, not by n_bands. n_bands never binds, so
-    # the search enumerates every subset the irreps allow: BaTiO3 gave 879224.
-    # You never want more Wannier functions than ~margin x the bands that must
-    # be reproduced, and the subset count falls steeply with the cap
-    # (21 projections: 762k subsets at 40, 38k at 20).
     eps_all = np.array([calc.get_eigenvalues(kpt=k, spin=0)
                         for k in range(len(calc.get_k_point_weights()))])
     n_froz = int(max(((e >= froz_min) & (e <= froz_max)).sum() for e in eps_all))
@@ -250,8 +421,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     print(f"Frozen manifold holds {n_froz} bands at the worst k "
           f"-> num_wann_max = {num_wann_max}")
 
-    # MOVED UP: the per-size search windows use the SAME estimator as the
-    # wannierisation windows, so the dos has to be available before the search.
     energies, dos = calc.get_dos(spin=0, npts=1001, width=0.05)
 
     nw_of_proj = [p.num_wann for p in trial_projections.projections]
@@ -267,23 +436,14 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             froz_max=froz_max,
             outer_min=Emin_0,
             outer_max=outer_max,
-            debug=False,  # set to True to see more printed information
+            debug=False,
         )
 
-    outer_max_of = {}          # nwann -> the outer top that size is judged in
+    outer_max_of = {}
     if per_size_window:
-        # A candidate of nwann functions will be wannierised in
-        # (Emin_0, find_emax_from_dos(..., nwann, K)), so that is the window
-        # it must be admissible in. Enumerating size by size is the only way to
-        # give each one its own: EBRsearcher takes a single outer_max, and
-        # admissibility is monotone in it, so one shared generous window lets
-        # through sets that fail their real one.
         print("Running EBRsearcher per size (window sized from K x nwann)...")
         combinations, seen = [], set()
         for nw in range(n_froz, num_wann_max + 1):
-            # SAME estimator as the wannierisation window below, so the only
-            # thing this experiment changes is that the SEARCH window now
-            # tracks nwann instead of coming from the DOS gap scan.
             emax_nw = find_emax_from_dos(energies=energies, dos_total=dos,
                                          n_wann=nw, emin=Emin_0, K=K)
             outer_max_of[nw] = emax_nw
@@ -291,7 +451,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             new = 0
             for c in found:
                 if nwann_of(c) != nw:
-                    continue          # smaller sets already had their own pass
+                    continue
                 key = tuple(int(v) for v in np.asarray(c, int))
                 if key in seen:
                     continue
@@ -304,9 +464,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             raise RuntimeError(
                 f"the size sweep produced no windows: n_froz={n_froz} > "
                 f"num_wann_max={num_wann_max}?")
-        # dedupe_combinations wants a searcher for irrep bookkeeping; the widest
-        # window is the safe one to hand it, since it admits every candidate we
-        # kept.
         ebrsearcher = _searcher(max(outer_max_of.values()))
     else:
         print("Running EBRsearcher...")
@@ -316,36 +473,12 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             outer_max_of[nw] = Emax_0
     print(f"Found {len(combinations)} combinations")
 
-    if verbose and len(combinations) <= 50:
-        print(f"Found {len(combinations)} combinations of projections:")
-        for c in combinations:
-            print(("+" * 80 + "\n") * 2)
-            print(trial_projections.write_with_multiplicities(c))
-            newset = trial_projections.get_combination(c)
-            newset.join_same_wyckoff()
-            newset.maximize_distance()
-            print(newset.write_wannier90(mod1=True))
-
-    # --- choose among the combinations instead of taking combinations[0].
-    # One amn for the UNION of the trial projections, then every combination is
-    # a column subset: symmetry says which sets are admissible, projectability
-    # says which are buildable.
     print("Computing the amn for the union of trial projections...")
     amn = AMN.from_bandstructure(bandstructure, trial_projections)
     A = _stack_payload(amn.data, 2)
-    # with_band_gram: AMN.from_bandstructure normalises each pseudo band's PW
-    # norm to 1, which does not restore orthogonality (the PAW augmentation is
-    # not diagonal), so p is unbounded -- hence "the band set reaches 105.7% of
-    # the trial-orbital norm". O Loewdin-orthonormalises the bands and restores
-    # the bound; without it every coverage in the ranking is inflated.
     if band_gram:
         S, O = true_overlap(amn, bandstructure, with_band_gram=True)
     else:
-        # DIAGNOSTIC ONLY. Without O, p_nk is not bounded by 1 -- MnTe reported
-        # "the band set reaches 105.7% of the trial-orbital norm" -- and the
-        # inflation is band-dependent, not a uniform rescale, so it can reorder
-        # combinations rather than just shifting them. Use it to reproduce a
-        # pre-correction run, not to select.
         S, O = true_overlap(amn, bandstructure), None
         print("  WARNING band_gram=False: coverage is NOT bounded by 1 and the "
               "ranking is not trustworthy")
@@ -355,9 +488,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         raise RuntimeError(
             f"the trial-orbital overlap has NaN/Inf in columns "
             f"{cols_bad.tolist()}. Inspect the projections covering those "
-            "columns -- most likely one of them is malformed (a pinned "
-            "free-parameter position, or a spread_factor that underflows). "
-            "The selection cannot proceed on a non-finite overlap.")
+            "columns -- most likely one of them is malformed.")
     if not np.isfinite(A).all():
         raise RuntimeError("the amn contains NaN/Inf; the projections are "
                            "malformed, not the selection")
@@ -372,26 +503,23 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         off += p.num_wann
     if off != A.shape[2]:
         raise RuntimeError(f"projections declare {off} columns, amn has {A.shape[2]}")
+    if len(site_of) != len(trial_projections.projections):
+        raise RuntimeError("site_of out of sync with trial_projections -- "
+                           "the per-site hybridisation would regroup wrongly")
 
     wk_k = np.full(A.shape[0], 1.0 / A.shape[0])
     target = (eps_kn >= froz_min) & (eps_kn <= froz_max)
 
     def outer_mask_for(nw):
-        """The band mask a candidate of `nw` functions is actually judged in."""
         top = outer_max_of.get(nw, max(outer_max_of.values()))
         return (eps_kn >= Emin_0) & (eps_kn <= top)
 
-    # widest window: used for the selection log and for the shortlist filter,
-    # where a single per-block in_window vector is expected
     outer = outer_mask_for(max(outer_max_of))
 
     kept = dedupe_combinations(S, blocks, combinations, trial_projections,
                                prefer=dedupe_prefer,
                                rank_first=dedupe_rank_first,
                                dedupe_by=dedupe_by, searcher=ebrsearcher)
-    # score the smallest first and stop: each score is a dense solve per k, so
-    # tens of thousands is not affordable, and the answer is always among the
-    # compact sets anyway
     cand = sorted((np.asarray(c, int) for c, _ in kept),
                   key=lambda c: int(sum(ci * (sl.stop - sl.start)
                                         for ci, (j, sl) in zip(c, blocks))))
@@ -400,10 +528,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
               "combinations")
         cand = cand[:max_score]
 
-    # SCORE EACH SIZE IN ITS OWN WINDOW. in_window is the fraction of an
-    # orbital's weight inside the OUTER window, so it moves with the window;
-    # scoring every candidate against the widest one would report an in_window
-    # no small candidate actually gets.
     in_window = orbital_window_fraction(A, S, blocks, outer, O=O)
     by_size = {}
     for c in cand:
@@ -420,8 +544,28 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
     ranked, info = rank_combinations(scored, p_min=p_min, min_gain=min_gain,
                                      use_in_window=use_in_window, labels=labels)
     selected_combination = ranked[0][0]
-    selected_proj_set = trial_projections.get_combination(selected_combination)
-    selected_proj_set.join_same_wyckoff()
+
+    # ---- span-preserving hybridisation, BEFORE validation -----------------
+    def _pset_of(c):
+        if alphabet == 'as_is':
+            s = trial_projections.get_combination(np.asarray(c, int))
+            s.join_same_wyckoff()
+            return s
+        s = hybridize_combination(c, trial_projections, site_of, calc.atoms,
+                                  spacegroup, shells_l,
+                                  prefer_plain_shell=prefer_plain_shell,
+                                  verbose=verbose)
+        # compare against nwann_of(c), which is arithmetic on the sizes captured
+        # when the alphabet was built -- not against a set re-derived from
+        # trial_projections, which is exactly the thing a mutation would corrupt.
+        expect = nwann_of(c)
+        if s.num_wann != expect:
+            raise RuntimeError(
+                f"hybridisation changed num_wann {expect} -> {s.num_wann}"
+                "; it must be span preserving")
+        return s
+
+    selected_proj_set = _pset_of(selected_combination)
     print("Selected projection set:")
     print(selected_proj_set.write_with_multiplicities(orbit=False))
 
@@ -444,15 +588,9 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         min_gain=min_gain, rel_gain=0.15, use_in_window=use_in_window)
     print(f"selection log written to {out_dir}/{seed}/ebr_selection.log")
 
-    # OPTIONAL: settle the top few by actually wannierising them. Coverage
-    # ranks by span; eta_2 measures interpolation, which depends on
-    # localisation -- on MnTe the set with 0.006 LOWER coverage gave half the
-    # band distance. Off by default: this costs ~5 wannierisations and is a
-    # calibration step, not something to run in production.
     if not validate:
         print("  validation disabled (validate=False): returning the coverage "
-              "pick without measuring eta. Pass validate=True to wannierise it "
-              f"and fall back to the shortlist if eta > {eta_ok} meV.")
+              "pick without measuring eta.")
     if validate:
         print(f"  validating: accept the pick if eta <= {eta_ok} and max spread "
               f"<= {spread_ok}, otherwise sweep up to {validate_n_max} "
@@ -465,10 +603,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         short = shortlist_for_validation(scored, S, blocks, trial_projections,
                                          in_window=in_window,
                                          n_max=validate_n_max, labels=labels)
-        # The pipeline's own pick goes FIRST and is evaluated whether or not it
-        # survived the shortlist filters: if it is already good the sweep stops
-        # after one wannierisation, and if it is not, its eta is the baseline
-        # everything else is compared against.
         picked = next((t for t in scored
                        if np.array_equal(t[0], selected_combination)), None)
         if picked is not None:
@@ -476,7 +610,6 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                                 if not np.array_equal(t[0], selected_combination)]
 
         def outer_for(nwann):
-            # identical to the window the search judged this size in
             emax = find_emax_from_dos(energies=energies, dos_total=dos,
                                       n_wann=nwann, emin=Emin_0, K=K)
             return (Emin_0, emax)
@@ -488,6 +621,8 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             metric_fn=least_square_deviation_within_frozen,
             outer_window_fn=outer_for, metric_outer=outer_window,
             atoms=calc.atoms, eta_ok=eta_ok, spread_ok=spread_ok,
+            pset_fn=(None if alphabet == 'as_is'
+                     else (lambda t: _pset_of(t[0]))),
             **(validate_kwargs or {}),unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=n_skipped_bands))
         best = next((r for r in results if np.isfinite(r["eta"])), None)
         cur_tag = combination_tag(selected_combination, blocks,
@@ -505,8 +640,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                 raise RuntimeError(
                     f"eta winner {best['tag']!r} is not in the shortlist -- "
                     "tags disagree between the sweep and the switch")
-            selected_proj_set = trial_projections.get_combination(selected_combination)
-            selected_proj_set.join_same_wyckoff()
+            selected_proj_set = _pset_of(selected_combination)
             refined_emax = find_emax_from_dos(
                 energies=energies, dos_total=dos,
                 n_wann=selected_proj_set.num_wann, emin=Emin_0, K=K)
@@ -532,17 +666,16 @@ def parse_wp_strings(strings, max_den=1000):
     return result
 
 def wyckoff_contains(wpos, position, tol=1e-4):
-    """Correct membership test: checks the FULL orbit, not just the
-    first representative, when the Wyckoff position has no free variables."""
+    """Correct membership test: checks the FULL orbit, not just the first
+    representative, when the Wyckoff position has no free variables."""
     if wpos.num_free_vars == 0:
         diffs = np.array(wpos.positions) - np.array(position)
-        diffs -= np.round(diffs)   # wrap to nearest periodic image
+        diffs -= np.round(diffs)
         return bool(np.any(np.all(np.abs(diffs) < tol, axis=1)))
     else:
         return wpos.contains_position(position) is not None
 
 def log_orbitals(proj_set,outer_win,frozen_win,nwann, seed, out_dir):
-# log the selected orbitals and the windows
     log_file_path = Path_(f"{out_dir}/{seed}/orbitals_and_windows.txt")
     with open(log_file_path, "w") as f:
         f.write(f"Outer window: {outer_win}\n")
@@ -554,9 +687,9 @@ def log_orbitals(proj_set,outer_win,frozen_win,nwann, seed, out_dir):
             f.write(str(p) + "\n")
             for orb in p.orbitals:
                 f.write(describe_orbital(orb) + "\n")
-#test
+
 if __name__ == "__main__":
     seed = "Si2"
     dir = "test_min_shells_full"
     calc = GPAW(f"{dir}/{seed}/{seed}-nscf-irred.gpw", txt=None)
-    EBR_method(in_dir=f"{dir}",out_dir=f"{dir}",seed=f"{seed}",ecut=500,calc=calc,comm=None,only_on_site=True,verbose=True)
+    EBR_method(in_dir=f"{dir}",out_dir=f"{dir}",seed=f"{seed}",ecut=500,calc=calc,comm=None,only_on_site=True,verbose=True,alphabet='as_is')

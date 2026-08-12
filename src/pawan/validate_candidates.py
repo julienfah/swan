@@ -141,6 +141,7 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
                         out_dir, in_dir, froz_window, outer_window,
                         wannierize_fn, interpolate_fn, metric_fn,
                         outer_window_fn=None, metric_outer=None, atoms=None,
+                        pset_fn=None,
                         stop_when_good=True, eta_ok=20.0, spread_ok=10.0,
                         dft_energies=None, dft_kpts=None, bands_gpw=None,
                         npoints=200, spin_channel=0, cache=True, verbose=True,
@@ -155,6 +156,22 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
         K * nwann, so an 18-WF and a 24-WF candidate need different ones and
         sharing a single window would starve the larger set of bands. Defaults
         to the fixed `outer_window`.
+
+    pset_fn : callable(t) -> ProjectionsSet, the set actually wannierised for
+        shortlist entry `t`. Defaults to
+        trial_projections.get_combination(t[0]) followed by join_same_wyckoff,
+        i.e. the raw trial projections, so passing nothing reproduces the old
+        behaviour exactly.
+
+        It exists so the set MEASURED is the set SHIPPED. The span fixes the
+        disentangled subspace and Omega_I, but not Omega_D + Omega_OD, and
+        maximal localisation is non-convex -- so a hybridised initial guess and
+        a plain one can land in different minima with different spreads, and
+        eta, an interpolation measure, inherits that. Validating the
+        un-hybridised set would score something other than what is returned.
+
+        nwann is taken from the returned set rather than from t[2], since a
+        variant may legitimately change it.
 
     metric_outer : the window the METRIC uses, the same for every candidate.
         It must be fixed: it selects which DFT bands enter the comparison, and
@@ -224,8 +241,14 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
         rec = dict(tag=tag, nwann=int(nwann), coverage=float(cov),
                    eta=float("inf"), max_spread=None, error=None)
         try:
-            pset = trial_projections.get_combination(np.asarray(c, int))
-            pset.join_same_wyckoff()
+            if pset_fn is None:
+                pset = trial_projections.get_combination(np.asarray(c, int))
+                pset.join_same_wyckoff()
+            else:
+                # the set that gets measured is the set that gets shipped
+                pset = pset_fn(t)
+                nwann = int(pset.num_wann)
+                rec["nwann"] = nwann
             if verbose:
                 print(f"  [{tag}] wannierising {nwann} WF "
                       f"(coverage {cov:.4f}) -> {d}")
