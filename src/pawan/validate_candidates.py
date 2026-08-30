@@ -1,14 +1,4 @@
 """Wannierise a shortlist of candidates and rank them by band distance.
-
-Why not AiiDA yet: the expensive step (SCF/NSCF) is already cached in .gpw, the
-sweep is ~5 candidates per material in one process, and the whole loop is the
-function below. AiiDA earns its setup cost when you need remote scheduling,
-restart and provenance across hundreds of jobs -- not while the algorithm itself
-is still changing daily.
-
-What makes this affordable: the DFT reference bands on the k-path are computed
-ONCE per material and reused for every candidate. Only the wannierisation is
-per candidate.
 """
 
 from __future__ import annotations
@@ -141,7 +131,7 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
                         out_dir, in_dir, froz_window, outer_window,
                         wannierize_fn, interpolate_fn, metric_fn,
                         outer_window_fn=None, metric_outer=None, atoms=None,
-                        pset_fn=None,
+                        pset_fn=None, k_values=None,
                         stop_when_good=True, eta_ok=20.0, spread_ok=10.0,
                         dft_energies=None, dft_kpts=None, bands_gpw=None,
                         npoints=200, spin_channel=0, cache=True, verbose=True,
@@ -172,6 +162,22 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
 
         nwann is taken from the returned set rather than from t[2], since a
         variant may legitimately change it.
+
+    k_values : None (default) -> unchanged behaviour, one wannierisation per
+        candidate with the window outer_window_fn(nwann) gives.
+
+        A sequence, e.g. (1.2, 1.5), sweeps the outer-window size factor K per
+        candidate: outer_window_fn is called as outer_window_fn(nwann, K=k) and
+        each K is wannierised, tagged and recorded separately. The sweep for a
+        candidate STOPS at the first K that is good enough (eta <= eta_ok and
+        max spread <= spread_ok), so the extra cost is paid only where the
+        first K does not work.
+
+        K sets how many bands the disentanglement gets per Wannier function.
+        Too small starves it; too large drags in states that do not belong to
+        the manifold. Which is right is material dependent and there is no
+        criterion for it here, so the honest thing is to measure both and let
+        eta choose -- every attempt lands in the results, not just the winner.
 
     metric_outer : the window the METRIC uses, the same for every candidate.
         It must be fixed: it selects which DFT bands enter the comparison, and
@@ -225,21 +231,38 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
             calc=calc, bands_gpw=bands_gpw, npoints=npoints,
             spin=spin_channel, cache=root / "dft_bands.npz",comm=serial_comm)
     print("got DFT reference bands, validating candidates...")
+
+    def _good(rec):
+        sp = rec.get("max_spread")
+        return (rec["error"] is None and rec["eta"] <= eta_ok
+                and (sp is None or sp <= spread_ok))
+
+    ks = list(k_values) if k_values else [None]
     out = []
-    for t in shortlist:
-        c, cov, nwann = t[0], t[1], t[2]
-        tag = combination_tag(c, blocks, trial_projections, atoms)
+    for i_cand, t in enumerate(shortlist):
+      c, cov, nwann0 = t[0], t[1], t[2]
+      base_tag = combination_tag(c, blocks, trial_projections, atoms)
+      accepted = False
+      for k in ks:
+        nwann = nwann0
+        # the K goes in the tag, so each attempt caches and writes separately
+        tag = base_tag + ("" if k is None else f"@K{k:g}")
         if tag in done:
             rec = done[tag]
             if verbose:
                 print(f"  [{tag}] cached: eta = {rec['eta']}")
             out.append(rec)
+            if _good(rec):
+                accepted = True
+                break
             continue
 
         d = root / tag
         d.mkdir(exist_ok=True)
         rec = dict(tag=tag, nwann=int(nwann), coverage=float(cov),
                    eta=float("inf"), max_spread=None, error=None)
+        if k is not None:
+            rec["K"] = float(k)
         try:
             if pset_fn is None:
                 pset = trial_projections.get_combination(np.asarray(c, int))
@@ -251,9 +274,14 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
                 rec["nwann"] = nwann
             if verbose:
                 print(f"  [{tag}] wannierising {nwann} WF "
-                      f"(coverage {cov:.4f}) -> {d}")
-            ow = (outer_window_fn(int(nwann)) if outer_window_fn is not None
-                  else outer_window)
+                      f"(coverage {cov:.4f})"
+                      + ("" if k is None else f", K={k:g}") + f" -> {d}")
+            if outer_window_fn is None:
+                ow = outer_window
+            elif k is None:
+                ow = outer_window_fn(int(nwann))
+            else:
+                ow = outer_window_fn(int(nwann), K=k)
             rec["outer_window"] = [float(ow[0]), float(ow[1])]
             wannierize_fn(proj_set=pset, outer_win=ow,
                           frozen_win=froz_window, seed=seed,
@@ -292,20 +320,28 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
             store.write_text(json.dumps(done, indent=2))
         out.append(rec)
 
-        if stop_when_good and len(out) == 1 and rec["error"] is None:
-            sp = rec.get("max_spread")
-            if rec["eta"] <= eta_ok and (sp is None or sp <= spread_ok):
-                if verbose:
-                    print(f"  [{tag}] eta = {rec['eta']:.2f} <= {eta_ok}"
-                          + (f", max spread {sp:.2f} <= {spread_ok}"
-                             if sp is not None else "")
-                          + " -- accepted, skipping the rest of the sweep")
-                return out
+        sp = rec.get("max_spread")
+        if _good(rec):
+            accepted = True
             if verbose:
-                print(f"  [{tag}] eta = {rec['eta']:.2f}"
-                      + (f", max spread {sp:.2f}" if sp is not None else "")
-                      + f" -- not good enough (eta_ok={eta_ok}, "
-                        f"spread_ok={spread_ok}); validating the shortlist")
+                print(f"  [{tag}] eta = {rec['eta']:.2f} <= {eta_ok}"
+                      + (f", max spread {sp:.2f} <= {spread_ok}"
+                         if sp is not None else "")
+                      + " -- good enough"
+                      + ("" if k is None or k == ks[-1]
+                         else f"; not trying K > {k:g}"))
+            break
+        if verbose and rec["error"] is None:
+            print(f"  [{tag}] eta = {rec['eta']:.2f}"
+                  + (f", max spread {sp:.2f}" if sp is not None else "")
+                  + f" -- not good enough (eta_ok={eta_ok}, "
+                    f"spread_ok={spread_ok})")
+      # end of the K sweep for this candidate
+      if stop_when_good and i_cand == 0 and accepted:
+            if verbose:
+                print("  first candidate accepted, skipping the rest of the "
+                      "sweep")
+            return out
 
     out.sort(key=lambda r: r["eta"])
     if verbose:

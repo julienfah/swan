@@ -35,7 +35,7 @@ import numpy as np
 from .amn_projectability import subset_projectability
 
 __all__ = ["combination_irreps", "span_projector", "group_by_span",
-           "_full_rank",
+           "_full_rank", "_cond0",
            "dedupe_combinations",
            "score_combinations",
            "rank_combinations",
@@ -66,21 +66,6 @@ def _n_hybrid(trial_set, c, atol=1e-8):
     axis-aligned harmonic, and it is the whole reason the preference exists --
     equal-span descriptions differ only in gauge, and a lobe is the better
     initial guess.
-
-    THE OLD TEST WAS `str(o) not in {"s","p","d","f"}`, which breaks in two ways
-    once the alphabet contains isotypic components:
-
-      * a component like `CMP_..__p0` (= px, py) is not a plain shell name, so
-        it counted as a hybrid -- but its members are unit vectors in the shell
-        basis, i.e. exactly as unhybridised as `p` itself;
-      * the count was per PROJECTION, so splitting a site into more blocks
-        raised the score. On GaN's N site the two equal-span descriptions
-        scored s + CMP_p0 + CMP_p1 -> (2, -3) against WP__hyb -> (1, -1), and
-        max() took the components. Index 5 and 13 -- the only two true hybrids
-        in that alphabet -- never appeared in a single surviving combination.
-
-    Counting mixed Wannier FUNCTIONS fixes both: components score 0, the sp3-like
-    block scores 4.
     """
     from wannierberri.symmetry import orbitals as wb_orb
     n = 0
@@ -148,13 +133,7 @@ def span_projector(S, blocks, c, rcond=1e-10, trial_set=None):
 def group_by_span(S, blocks, combinations, atol=1e-6, rcond=1e-10):
     """Cluster combinations by the subspace they span. Returns [[idx, ...], ...].
 
-    Compares projectors with a TOLERANCE. Hashing rounded floats fails here for
-    a structural reason: M is 36x36 for this alphabet and two genuinely
-    equivalent projectors differ by ~1e-9, so with ~1300 entries the odds that
-    at least one straddles a 1e-6 rounding boundary are ~92%. That reported 439
-    distinct spans out of 439, when the log plainly showed pairs with identical
-    coverage AND identical cond -- e.g. [1,2,3,10] and [3,5,10], differing only
-    by d == rest0 + rest1.
+    Compares projectors with a TOLERANCE
 
     The trace is used as an O(1) pre-filter with the same tolerance, never as a
     bucket key, so there is no boundary to straddle.
@@ -172,52 +151,46 @@ def group_by_span(S, blocks, combinations, atol=1e-6, rcond=1e-10):
     return groups
 
 
-def _full_rank(S, blocks, c, tol=1e-3):
-    """Does this combination span as many dimensions as it has columns?
-
-    A rank-deficient set spans a SMALLER space than its column count, and
-    span_projector uses pinv, so it groups with the full-rank set spanning that
-    smaller space. It must never be the representative: it would be rejected
-    downstream by the conditioning check and take the good set with it. On
-    BaTiO3 that is exactly how Ti t2g + O p (12 WF) disappeared -- a dependent
-    13-WF partner won the tie-break and was then thrown out.
+def _cond0(S, blocks, c):
+    """Smallest eigenvalue of the NORMALISED overlap at k=0. 1.0 = orthonormal.
     """
     S0 = np.asarray(S)[0]
     cols = np.concatenate([np.arange(sl.start, sl.stop)
                            for (j, sl), cj in zip(blocks, np.asarray(c, int))
                            if cj > 0]) if np.any(c) else np.zeros(0, int)
     if cols.size == 0:
-        return False
+        return 0.0
     Scc = S0[np.ix_(cols, cols)]
     d = np.sqrt(np.clip(np.diag(Scc).real, 1e-30, None))
     Sn = (Scc / d[:, None]) / d[None, :]
-    return bool(np.linalg.eigvalsh(Sn).min().real >= tol)
+    return float(np.linalg.eigvalsh(Sn).min().real)
+
+
+def _full_rank(S, blocks, c, tol=1e-3):
+    """Does this combination span as many dimensions as it has columns?
+    """
+    return _cond0(S, blocks, c) >= tol
 
 
 def dedupe_combinations(S, blocks, combinations, trial_set, prefer="hybrid",
                         rank_first=True, dedupe_by="span", searcher=None,
-                        atol=1e-6, verbose=True):
+                        atol=1e-6, cond_width=0.05, verbose=True):
     """Group equivalent combinations; keep one representative each.
 
     dedupe_by : 'span' (default) groups combinations spanning the SAME subspace,
         which is the only sound criterion. 'irreps' groups by irrep content and
         is the LEGACY behaviour, kept for reproducing older runs.
-
-        Grouping by irreps is WRONG and was a real bug: different Wyckoff
-        positions can induce identical irrep multiplicities at every k while
-        spanning genuinely different subspaces -- that is the composite band
-        representation ambiguity. On ZnS, Zn(sp3)+Zn(dT2)+Zn(dE)+S(p) and
-        Zn(dT2)+Zn(dE)+S(sp3)+S(dT2) were grouped and one was silently
-        discarded. On MnTe it plausibly hid [3,5,7,9,10] behind [0,1,2,10],
-        because the hybrid preference keeps whichever member has more composite
-        projections and the other member is then never scored. If switching to
-        'irreps' restores an old answer, that answer came from this.
-
     prefer : 'hybrid' | 'fewest' | 'first' -- which member to keep.
-    rank_first : put FULL RANK ahead of `prefer`. A rank-deficient
-        representative is rejected downstream and takes its whole group with
-        it; that is how Ti t2g + O p vanished on BaTiO3. Set False only to
-        reproduce the pre-fix ordering.
+    rank_first : put CONDITIONING ahead of `prefer`. Members of a group span the
+        same space, so what separates them is how well conditioned the
+        description is: a rank-deficient one is rejected downstream and takes
+        its whole group with it ,
+        and a merely SKEWED one is a worse initial guess for
+        no gain. Set False only to reproduce the pre-fix ordering.
+    cond_width : conditioning is compared in bands of this width, so two
+        descriptions differing by ~1e-3 tie and `prefer` still decides between
+        them. Wide enough to absorb numerical noise, narrow enough to separate
+        0.62 from 1.00.
     """
     combinations = [np.asarray(c, int) for c in combinations]
     if dedupe_by == "irreps":
@@ -239,15 +212,18 @@ def dedupe_combinations(S, blocks, combinations, trial_set, prefer="hybrid",
             return (-int(c.sum()),)
         return (0,)
 
+    def cond_bucket(c):
+        return round(_cond0(S, blocks, c) / cond_width)
+
     out = []
     for g in groups:
         members = [combinations[i] for i in g]
         if prefer == "first" and not rank_first:
             rep = members[0]
         elif rank_first:
-            rep = max(members, key=lambda c: (_full_rank(S, blocks, c),) + pref_key(c))
+            rep = max(members, key=lambda c: (cond_bucket(c),) + pref_key(c))
         else:
-            rep = max(members, key=lambda c: pref_key(c) + (_full_rank(S, blocks, c),))
+            rep = max(members, key=lambda c: pref_key(c) + (cond_bucket(c),))
         out.append((rep, members))
     if verbose:
         dup = sum(len(m) - 1 for _, m in out)
@@ -261,9 +237,12 @@ def dedupe_combinations(S, blocks, combinations, trial_set, prefer="hybrid",
             print(f"  WARNING dedupe_by='irreps': at least {n_mixed} group(s) "
                   "contain members spanning DIFFERENT subspaces; all but the "
                   "representative are discarded without being scored")
-        n_bad = sum(1 for rep, _ in out if not _full_rank(S, blocks, rep))
+        n_bad = sum(1 for rep, _ in out if _cond0(S, blocks, rep) < 1e-3)
         if n_bad:
             print(f"  WARNING {n_bad} representative(s) are rank deficient")
+        n_hyb = sum(1 for rep, _ in out if _n_hybrid(trial_set, rep) > 0)
+        print(f"  {n_hyb} representative(s) contain a genuinely mixed (hybrid) "
+              "block")
     return out
 
 
@@ -341,48 +320,7 @@ def rank_combinations(scored, cond_min=1e-3, min_gain=0.02, rel_gain=0.15,
                       p_min=None, use_in_window=False, verbose=True,
                       labels=None):
     """Pareto front on (nwann, coverage), then stop where the gain flattens.
-
-    Neither pure criterion works, and MnTe shows both failures in one table:
-
-        22 WF  coverage 0.5853
-        24 WF  coverage 0.7333     <- +0.148 for 2 WF
-        26 WF  coverage 0.7349     <- +0.0016 for 2 WF
-
-    Sorting by nwann takes 22 and misses that the next 2 orbitals buy almost a
-    sixth of the manifold. Sorting by coverage takes the largest set, since
-    coverage is monotone in the set -- adding orbitals can never lower it.
-
-    So: build the Pareto front (each entry the best coverage at its size),
-    then walk it from the smallest and stop at the first step whose gain PER
-    WANNIER FUNCTION falls below `rel_gain` of the best step seen. On MnTe that
-    accepts 22->24 (0.074/WF) and rejects 24->26 (0.0008/WF, 1% of it), landing
-    on 24 -- the set the pDOS route found.
-
-    cond_min rejects linearly dependent sets first: EBRsearcher matches irreps
-    and cannot see that two projections overlap, so it will offer e.g. a hybrid
-    complement together with the full shell it came from.
-
-    min_gain is the coverage a single added Wannier function must buy (0.02 =
-    2% of the manifold), measured with lookahead over the whole remaining front.
-    rel_gain is accepted for backward compatibility and no longer used: the
-    lookahead makes a relative knee test redundant.
-
-    p_min, if given, is a floor on absolute coverage applied after the walk.
-    Leave it None -- WannierBerri's analytic trial orbitals cap coverage near
-    0.8, so an absolute threshold mostly just fires or does not depending on the
-    material rather than on the choice.
     """
-    # optional in-window weighting: effective = coverage x min over the chosen
-    # blocks of the fraction of that orbital's own weight inside the OUTER
-    # window. Coverage is monotone in the set and so cannot penalise an orbital
-    # the disentanglement is unable to build; this can. min, not mean, because
-    # one unreachable trial function compromises the whole set -- it has nothing
-    # to be built from and drags the others through the orthonormalisation.
-    #
-    # Ad hoc: the product has no derivation, only the property that each factor
-    # is in [0, 1] and measures something the other misses. Validate with the
-    # band distance before trusting it, and keep it OFF for a set you already
-    # know Wannierises well.
     if use_in_window:
         scored = [(t[0], t[1] * (t[4] if len(t) > 4 else 1.0)) + tuple(t[2:])
                   for t in scored]
@@ -407,22 +345,6 @@ def rank_combinations(scored, cond_min=1e-3, min_gain=0.02, rel_gain=0.15,
             front.append(t)
             top = t[1]
 
-    # Walk the front with LOOKAHEAD: from the current point, consider every
-    # larger set on the front, not just the next one, and jump to whichever has
-    # the best coverage gain PER WANNIER FUNCTION. Repeat until nothing pays.
-    #
-    # Stepping only to the neighbour truncates on a non-monotone profile. Real
-    # case, ZnS:
-    #     9 -> 12 : +0.0034/WF   (below the floor -> old rule stopped here)
-    #    12 -> 13 : +0.0484/WF   (well above it, never evaluated)
-    # The knee was at 13 and the neighbour-only walk could not see past the flat
-    # step in front of it. With lookahead, 9 -> 13 is scored directly as
-    # +0.0147/WF, which is the honest average cost of getting there.
-    #
-    # min_gain is the coverage one added Wannier function must buy (0.02 = 2% of
-    # the manifold). It is what distinguishes "the gain flattened" from "there
-    # was never any gain": Si2's front rises by ~0.005/WF the whole way and must
-    # stop at the smallest set, while MnTe has a genuine 0.074/WF first step.
     chosen = front[0]
     steps = []
     while True:
@@ -465,32 +387,6 @@ def shortlist_for_validation(scored, S, blocks, trial_set, in_window=None,
                              n_max=6, cov_frac=0.90, iw_min=0.30,
                              cond_min=1e-3, verbose=True, labels=None):
     """Candidates worth Wannierising: FILTER on both criteria, then order.
-
-    Measured on MnTe over 13 wannierisations, neither scalar ranks:
-
-        corr(min in-window, log eta) = -0.94 on the first 8, +0.38 on all 13
-        corr(coverage,      log eta) = +0.66 on the first 8, -0.79 on all 13
-
-    Both flipped sign when a second family of candidates was added, so neither
-    is a ranking function. As a CONJUNCTION they separated the sample perfectly:
-
-        coverage > 0.70 AND min(in-window) > 0.3  ->  eta 17-50   (5 sets)
-        either one failing                        ->  eta 91-5573 (8 sets)
-
-    They fail differently, which is why the conjunction works. Low coverage
-    means the set does not span the manifold at all -- the Te-centred sets sat
-    at 0.54 and gave eta ~5500. Low in-window means one orbital cannot be built
-    from the available states -- every set containing Te s (0.207) landed in
-    91-240 despite the HIGHEST coverages in the sample.
-
-    cov_frac : keep combinations within this fraction of the best coverage
-        (relative, so it transfers between materials).
-    iw_min : absolute floor on min(in-window). 0.30 sits in the gap between
-        0.207 (Te s, always bad) and 0.377 (always fine) -- fitted to one
-        material, so treat it as provisional.
-
-    Within the survivors, ordering barely matters -- they span eta 17-50 -- so
-    they are returned largest-coverage first with span-diversity enforced.
     """
     live = [t for t in scored
             if np.isfinite(t[1]) and (len(t) < 4 or not np.isfinite(t[3])

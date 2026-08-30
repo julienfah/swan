@@ -12,25 +12,6 @@ from ase import Atoms
 import warnings
 
 
-def get_crystal_system(atoms):
-    """returns the crystal system of the given atoms object based on its space group number."""
-    sg = spglib.get_symmetry_dataset((atoms.cell, atoms.get_scaled_positions(), atoms.numbers)).number
-    if 1 <= sg <= 2:
-        return "triclinic"
-    if 3 <= sg <= 15:
-        return "monoclinic"
-    if 16 <= sg <= 74:
-        return "orthorhombic"
-    if 75 <= sg <= 142:
-        return "tetragonal"
-    if 143 <= sg <= 167:
-        return "trigonal"
-    if 168 <= sg <= 194:
-        return "hexagonal"
-    if 195 <= sg <= 230:
-        return "cubic"
-
-
 def standardize_cell(atoms):
     """Standardizes the cell of the given atoms object using spglib."""
     cell = spglib.standardize_cell(
@@ -100,11 +81,12 @@ def pointgroup_from_atoms(atoms, symprec=1e-3):
     return pg
 def iterate_vector_inclusive(v1, v2):
     return itertools.product(*(range(a, b + 1) for a, b in zip(v1, v2)))
-def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,max_denominator=8,tol=1e-2):
+def adaptative_high_sym_k_grid(atoms, nk_length=40,kill_axis=None, multiplier=1,max_denominator=8,tol=1e-5):
     """
     Creates a k-grid that fits the point group of the system that contains all high-symmetry points in the BZ, and is a multiple of the original one.
     """
     special_points = atoms.cell.bandpath().special_points  # dict letter: np.array([x,y,z]) in fractional coordinates
+    print(f"Special points in the BZ: {special_points}")
     multiples = []
     for letter, point in special_points.items():
         if np.allclose(point, 0.0) or np.allclose(point, 1.0):

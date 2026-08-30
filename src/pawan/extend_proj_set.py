@@ -9,7 +9,9 @@ from pawan.utils import safety_check_windows
 from pawan.utils import find_emax_from_dos
 
 """
-extends a given projection set with s orbitals from the next smallest-multiplicity wyckoff position, and returns the new projection set.
+EXPERIMENTAL and UNTESTED : is probably unfit for SAWF altough it uses Wyckoff positions.
+
+Extends a given projection set with s orbitals from the next smallest-multiplicity wyckoff position, and returns the new projection set.
 """
 
 

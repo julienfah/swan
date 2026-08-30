@@ -11,63 +11,6 @@ import itertools
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.io.ase import AseAtomsAdaptor
 
-"""
-# 1. Find which operations fix (leave invariant, mod lattice translation) your target atom
-def site_symmetry_ops(atom_frac_pos, rotations, translations, positions, tol=1e-5):
-    ops = []
-    for R, t in zip(rotations, translations):
-        image = R @ atom_frac_pos + t
-        if np.allclose((image - atom_frac_pos) % 1.0, 0.0, atol=tol) or \
-           np.allclose((image - atom_frac_pos) % 1.0, 1.0, atol=tol):
-            ops.append(R)
-    return ops
-
-site_ops_frac = site_symmetry_ops((0.5,0.5,0.5), rotations, translations, positions)
-
-#print("Site symmetry operations (fractional):")
-#for i, R in enumerate(site_ops_frac):
-#    print(f"  {i+1}\n: {R}")
-
-# 2. Convert each fractional rotation matrix to Cartesian
-A = cell.T   # columns = lattice vectors in Cartesian; x_cart = A @ x_frac
-site_ops_cart = [A @ R_frac @ np.linalg.inv(A) for R_frac in site_ops_frac]
-
-print(get_P_S_axes(site_ops_cart))
-
-#print(get_cluster(calc.atoms, calc.atoms.positions[1]))"""
-"""
-def rotation_axis(R):
-    Axis of a proper rotation matrix (eigenvector with eigenvalue 1).
-    w, v = np.linalg.eig(R)
-    idx = np.argmin(np.abs(w - 1.0))
-    axis = np.real(v[:, idx])
-    return axis / np.linalg.norm(axis)
-
-def rotation_order(R):
-    n such that R is a Cn rotation, from trace(R) = 1 + 2cos(2*pi/n).
-    cos_theta = (np.trace(R) - 1) / 2
-    theta = np.arccos(np.clip(cos_theta, -1, 1))
-    if np.isclose(theta, 0):
-        return 1  # identity
-    return round(2 * np.pi / theta)
-def get_P_S_axes(site_ops):
-    proper_rots = [R for R in site_ops if np.isclose(np.linalg.det(R), 1) and not np.allclose(R, np.eye(3))]
-    paxis_R = max(proper_rots, key=rotation_order)   # highest-order Cn
-    paxis = rotation_axis(paxis_R)
-
-    secondary_rots = [R for R in proper_rots if not np.isclose(abs(np.dot(rotation_axis(R), paxis)), 1.0)]
-    saxis = None
-    if secondary_rots:  # Dn family
-        saxis = rotation_axis(secondary_rots[0])
-    else:
-        mirrors = [R for R in site_ops if np.isclose(np.linalg.det(R), -1) and rotation_order_of_reflection_check(R)]
-        if mirrors:  # Cnv family
-            normal = rotation_axis_eigval_minus1(mirrors[0])  # eigenvector w/ eigenvalue -1
-            saxis = np.cross(paxis, normal)
-        else:
-            saxis = np.zeros(3)  # Cn, S2n, Cnh — let rotate_mol_to_symels pick arbitrarily
-    return paxis, saxis"""
-
 def hybridize(atoms,position):
     """
     Hybridize the orbitals according to the point group symmetry.
@@ -310,51 +253,4 @@ def handle_linear_site(pg_str):
 
 #print(hybridize(calc.atoms, calc.atoms.positions[0]))
 #print(hybridize_orbitals(calc.atoms, calc.atoms.positions[0], orbitals=["s", "p","d"]))
-"""structure = AseAtomsAdaptor.get_structure(calc.atoms)
-print("using pymatgen CrystalNN:")
-print(get_cluster_crystalnn(structure, 2))
-print("using ASE neighborlist:")
-print(get_cluster(calc.atoms, calc.atoms.positions[2]))
-"""
-"""
-#perform hybridization for each atom
-selected_orbitals = [(0, (4,'s')), (1, (4,'s')), ( 2, (4,'s')), ( 3, (4,'s')), ( 0, (4,'p')), ( 1, (4,'p')), ( 2, (4,'p')), ( 3, (4,'p'))]
-selected_orbitals_l_list = defaultdict(list) #convert to list of {iatom : list of all l values of iatom}
-hybrydized_orbitals = [] 
-for i, (n,l) in selected_orbitals:
-    selected_orbitals_l_list[i].append(l)
-for i, l_list in selected_orbitals_l_list.items():
-    selected_hybridized_orbitals = hybridize_orbitals(calc.atoms, calc.atoms.positions[i], orbitals=l_list)
-    hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
-print(f"Selected orbitals: {selected_orbitals}")
-print(f"Hybridized orbitals: {hybrydized_orbitals}")"""
 
-"""from itertools import permutations
-
-def reference_lobes(hybrid_name):
-    lobes = orbitals_sets_dic[hybrid_name]
-    directions = []
-    for lobe in lobes:
-        coef = hybrids_coef[lobe]
-        d = np.array([coef.get("px", 0), coef.get("py", 0), coef.get("pz", 0)])
-        directions.append(d / np.linalg.norm(d))
-    return np.array(directions)
-
-def fit_orientation(hybrid_name, lobe_directions):
-    ref = reference_lobes(hybrid_name)
-    best = None
-    for perm in permutations(range(len(ref))):
-        A = lobe_directions[list(perm)]
-        H = ref.T @ A
-        U, S, Vt = np.linalg.svd(H)
-        d = np.sign(np.linalg.det(Vt.T @ U.T))
-        R = Vt.T @ np.diag([1, 1, d]) @ U.T
-        rmsd = np.linalg.norm(ref @ R.T - A)
-        if best is None or rmsd < best[0]:
-            best = (rmsd, R, perm)
-    rmsd, R, perm = best
-    return R @ np.array([0, 0, 1]), R @ np.array([1, 0, 0]), rmsd
-
-lobe_directions = np.array([symtext.reverse_rotate @ d for d in lobe_directions_symtext])
-zaxis, xaxis, rmsd = fit_orientation("sp3", lobe_directions)
-"""

@@ -9,7 +9,7 @@ from pawan.dft import full_dft_run
 from pawan.wannier import wannierize, interpolate_bands
 from pawan.auto_proj_and_windows import get_proj_set
 from pawan.metrics import least_square_deviation_within_frozen,max_deviation_within_frozen
-from pawan.ebr_method3 import EBR_method
+from pawan.ebr_method import EBR_method
 
 def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
     """
@@ -50,7 +50,7 @@ def auto_workflow(
     auto_nk_grid=False,
     kill_axis=None,
     max_denominator=8,
-    tol=1e-2,
+    tol=1e-5,
     nk=12,
     nkfft=1,
     ecut=500.0,

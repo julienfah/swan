@@ -91,7 +91,7 @@ def nscf(seed, out_dir, in_dir,k_grid,calc=None, nbands=40, unconverged_bands=2)
     calc_nscf_irred.write(f"{out_dir}/{seed}/{seed}-nscf-irred.gpw", mode="all")
 
 
-def dft_bands(seed, in_dir,out_dir,calc=None ,dft_nbands=14, npoints=100):
+def dft_bands(seed, in_dir,out_dir,calc=None ,dft_nbands=14, npoints=100,unconverged_bands=2):
     """
     Compute the band structure directly from the DFT calculation for comparison with the Wannier-interpolated bands.
     """
@@ -109,7 +109,7 @@ def dft_bands(seed, in_dir,out_dir,calc=None ,dft_nbands=14, npoints=100):
         nbands=dft_nbands,
         symmetry="off",
         kpts=path,  # {'path': list(path.values()), 'npoints': 100},
-        convergence={"bands": dft_nbands - 2},
+        convergence={"bands": dft_nbands - unconverged_bands},
         txt=f"{out_dir}/{seed}/{seed}-bands.txt",
     )
     dft_calc_bands.write(f"{out_dir}/{seed}/{seed}-bands.gpw", mode="all")
@@ -126,7 +126,7 @@ def full_dft_run(
     auto_nk_grid=False,
     kill_axis=None,
     max_denominator=8,
-    tol=1e-2,
+    tol=1e-5,
     nk=12,
     nkfft=1,
     ecut=500.0,
@@ -157,4 +157,4 @@ def full_dft_run(
     if not skip_nscf:
         nscf(nbands=nbands, unconverged_bands=unconverged_bands, seed=seed, out_dir=out_dir, in_dir=in_dir, k_grid=k_grid)
     dft_nbands = nbands if dft_plot_nbands is None else dft_plot_nbands
-    dft_bands(seed=seed, in_dir=in_dir, out_dir=out_dir, dft_nbands=dft_nbands, npoints=npoints)
+    dft_bands(seed=seed, in_dir=in_dir, out_dir=out_dir, dft_nbands=int(dft_nbands*0.8), npoints=npoints, unconverged_bands=unconverged_bands)

@@ -1,32 +1,4 @@
 """Candidate scan: one AMN pass over a wide projection set, then rank.
-
-You do NOT need to Wannierise to get projectability.  WannierData.from_gpaw
-COMPUTES the amn during construction; wannierise() is the separate optimisation
-step.  So:
-
-    files=["amn"]        <- everything needed for selection
-    files=[..., "mmn"]   <- O(nb^2 * nnb) per k, only needed to Wannierise
-    files=[..., "unk"]   <- writes the real-space wavefunctions to disk
-
-Dropping mmn and unk is what makes a wide candidate set affordable.
-
-WHY THE BLOCKS ARE ORBIT SUMS, AND WHY THAT IS FREE
----------------------------------------------------
-A WannierBerri Projection covers a whole symmetry orbit (position_num is the
-list of orbit positions), so each column block is already summed over the orbit.
-That removes the IBZ artefact that `symmetrize_over_orbits` exists to repair on
-the sphere side: a per-ATOM sum over the irreducible BZ is not invariant,
-because the operations mapping k -> Sk also permute the atoms, but the ORBIT sum
-is.  Here you never form the per-atom quantity in the first place.
-
-rotate_basis does not matter for the block weight either: it applies a rotation
-INSIDE each l manifold, and the block weight sums |.|^2 over m, which is
-invariant under that.  It matters only if you want m-resolved output.
-
-NBANDS.  You need nbands >= nproj, and comfortably more -- diag(A^dag A) is the
-fraction of each trial orbital the band set captures, and A^dag A only stands in
-for S when that is near 1.  A wide candidate set therefore needs a wider NSCF
-than the final Wannierisation does.
 """
 
 from __future__ import annotations
@@ -336,9 +308,7 @@ def per_band_profile(p_kn, wk_k, eps_kn=None, verbose=True):
     Use the k WEIGHTS.  A plain sum over irreducible k-points weights every
     point equally, which skews the profile toward whatever the IBZ oversamples.
 
-    The largest drop between consecutive bands is the natural manifold edge: for
-    Si with s+p+d it falls at band 9 -> 10 (0.820 -> 0.548), i.e. 18 trial
-    orbitals describe 10 bands well and nothing above that.
+    The largest drop between consecutive bands is the natural manifold edge.
     """
     wk = np.asarray(wk_k) / np.sum(wk_k)
     p_n = (wk[:, None] * p_kn).sum(axis=0)
@@ -362,10 +332,7 @@ def tune_spread(calc, spacegroup, from_gpaw, e_fermi, eps_kn,
 
     WannierBerri builds trial orbitals analytically (Bessel_j_radial_int +
     Projector), which is a hydrogenic-type guess rather than the
-    pseudopotential's own atomic orbitals.  That is why Si's occupied bands come
-    out at p = 0.92 instead of the ~0.99 a true PAO set gives -- and why
-    Vitale's p_thr = 0.95, which assumes QE's PP_PSWFC, freezes nothing here.
-
+    pseudopotential's own atomic orbitals.  
     Tuning the spread recovers most of the gap and costs one amn per value,
     which is cheap because mmn and unk are not computed.  Do it once per
     element, not per compound.
@@ -477,12 +444,7 @@ def _plot_pdos(path, energies, pdos, total, e_fermi, labels=None, title="",
     setup-dependent scale.  Compare the SHAPES, not the heights.
 
     Both panels report max(sum/total) and max(single channel/total), and the
-    region where the sum EXCEEDS the total is shaded red.  The upper panel
-    cannot exceed 1: the Loewdin weights partition p_nk <= 1.  The lower panel
-    routinely does -- in Bi2CaMg2 the Mg p channel ALONE reaches 30.5 against a
-    total DOS of ~23 at -38 eV.  Parts larger than the whole means it is not a
-    partition, so a lower panel that "tracks the total better" is reporting a
-    coincidence of the setup's normalisation, not a better decomposition.
+    region where the sum EXCEEDS the total is shaded red.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -638,8 +600,7 @@ def add_empty_sites(proj_set, blocks, sites, spacegroup, shells=(0,),
     """Append Projections at empty positions; returns (proj_set, blocks).
 
     Start with s only: a spherically symmetric blob is what an interstitial
-    state usually wants, and it costs one WF per site.  Add p only if the
-    coverage measurement says s was not enough.
+    state usually wants, and it costs one WF per site.
     """
     from wannierberri.symmetry.projections import Projection, ProjectionsSet
 
@@ -671,8 +632,7 @@ def occupied_block(eps_kn, e_fermi, gap_thres=5.0, verbose=True):
 
     Band-INDEX gaps, so it is immune to k-mesh density, and semicore sits in its
     own block and is excluded.  gap_thres only decides what counts as connected:
-    ~5 eV crosses an intra-valence gap (GaAs As-4s, ~4 eV down) but not a
-    semicore separation (Bi 5d, ~13 eV down).
+    ~5 eV crosses an intra-valence gap.
     """
     blks = band_blocks(eps_kn, gap_thres)
     occupied = np.where((eps_kn <= e_fermi).any(axis=0))[0]
@@ -725,11 +685,7 @@ def amn_projection_method(
 
     p_froz : None (default) means the projectability gate on the frozen window
         is OFF and p is reported as a diagnostic only; the window is the target
-        constrained by N_k <= nwann.  Turn it on only once tune_spread has the
-        occupied p near 0.99: Vitale's 0.95 assumes QE's PAOs, and with
-        WannierBerri's analytic trial orbitals Si sits near 0.85, so the gate
-        would truncate everything.  The scan starts at E_F regardless -- the
-        occupied manifold is frozen whatever its p.
+        constrained by N_k <= nwann.
 
     margin : nwann target as a multiple of n_froz, the number of bands the
         frozen window must hold at the worst k.  This is the SIZE criterion and

@@ -1,54 +1,4 @@
 """Projectability without spheres: p_nk in [0, 1], the QE/Vitale quantity.
-
-DROP-IN BACKEND.  This module exposes the same four names as
-sphere_projectability, with the same signatures and return shapes:
-
-    collect_projections(calc, spin, shells, atom_indices) -> eps_kn, wk_k, V
-    channels(calc, iatom)        -> {l: [n, ...]}   (order matches V's axis 2)
-    channel_ceiling(calc, a, l)  -> float
-    channel_weights(V)           -> {(a, l): (nk, nb)}
-
-so `select_orbitals_by_sphere_charge`, `salc.projectability_from_gpaw` and the
-driver all work unchanged -- you swap which module they import.
-
-WHY P_ani CANNOT REACH THIS
----------------------------
-The PAW identity |psi_n> = sum_i |phi_i> <p_i|psi~_n> holds INSIDE the sphere
-only.  That is what makes P_ani sufficient for a sphere decomposition, and
-equally why nothing outside rc is recoverable from it: outside, psi = psi~, and
-you need the pseudo wavefunction on the grid.  Si's 55% interstitial deficit is
-the information content of the array, not an implementation flaw.
-
-WHAT THIS DOES INSTEAD
-----------------------
-`setup.phit_j` are the pseudo partial waves -- GPAW's analogue of QE's
-PP_PSWFC, already the minimal valence set (no polarisation functions, unlike
-dzp).  get_lcao_projections_HSP computes <Phi_M|psi_nk> from a PLANE-WAVE
-calculation including the PAW augmentation term, and returns the true overlap
-S_qMM.  Loewdin then gives
-
-    Pi = sum_MN |Phi_M> (S^-1)_MN <Phi_N|          (idempotent, Hermitian)
-    p_nk = <psi|Pi|psi> = sum_M |[V S^{-1/2}]_nM|^2   in [0, 1]
-
-BY CONSTRUCTION, not by calibration.  p = 0.95 means the same thing in Si, in
-BaTiO3 and in a slab, so Vitale's thresholds transfer literally and
-channel_ceiling is exactly 2l+1 -- no free-atom correction, no reference charge,
-no per-system alpha.
-
-PREREQUISITE.  The .gpw must contain the wavefunctions:
-
-    calc.write(f"{seed}-nscf-irred.gpw", mode="all")
-
-P_ani survives a light write; psit_nG does not.  If this module raises about
-missing wavefunctions, that is the fix.
-
-TWO THINGS THAT DIFFER FROM THE SPHERE BACKEND
-----------------------------------------------
-* Loewdin is global.  `shells` and `atom_indices` filter the RETURNED keys
-  only; the orthogonalisation always runs over the complete AO set, because
-  S^{-1/2} of a subset is not the subset of S^{-1/2}.  For the sphere backend
-  each atom is independent and restricting was exact.
-* sum over all returned keys equals p_nk only when nothing was filtered.
 """
 
 from __future__ import annotations
@@ -117,14 +67,7 @@ def channels(calc, iatom):
 
 
 def channel_ceiling(calc, iatom, l, per_orbital=False):
-    """Tr(Pi) = n_channels * (2l+1), the RANK of the projector.
-
-    N sums <psi|Pi|psi> over bands and therefore approaches Tr(Pi), not (2l+1),
-    whenever a setup carries more than one phit_j for that l (semicore +
-    valence: Ba 5s/6s, Ti 3p/4p).  Unlike the sphere backend there is no
-    free-atom norm factor -- p is already a true projection fraction -- so
-    fill = N/Tr(Pi) is rcut-independent as well as bounded, which is what makes
-    alpha transferable between elements.
+    """Tr(Pi) = n_channels * (2l+1), the rank of the projector.
     """
     l = _as_l(l)
     n_chan = len(channels(calc, iatom).get(l, []))

@@ -1,9 +1,4 @@
 """Detailed log of an EBR projection search.
-
-Written to answer "why THAT set?" without rerunning anything: the trial
-alphabet with explicit hybrid coefficients, every projection's standalone
-coverage, the Pareto front, the marginal-gain walk that stopped where it did,
-and the runners-up.
 """
 
 from __future__ import annotations
@@ -86,13 +81,6 @@ def write_selection_log(path, trial_projections, blocks, scored, front, chosen,
     w("")
     solo, frac = {}, {}
     if A is not None and S is not None and target_mask is not None:
-        # in-window is measured against the OUTER window, coverage against the
-        # FROZEN one. Different questions, different windows: coverage asks
-        # whether an orbital helps reproduce what MUST be reproduced, in-window
-        # asks whether the disentanglement can build it at all. Measuring
-        # in-window on the frozen window penalises every antibonding partner --
-        # ZnS gave Zn s 26% and Zn p 12% purely for being conduction character,
-        # which is what the outer window exists to accommodate.
         frac = orbital_window_fraction(
             A, S, blocks, target_mask if outer_mask is None else outer_mask, O=O)
         wk = np.asarray(wk_k) / np.sum(wk_k)

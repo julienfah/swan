@@ -1,5 +1,5 @@
 """
-salc.py -- symmetry-adapted projections for Wannierisation, in one module.
+Symmetry-adapted projections for Wannierisation, in one module.
 
 Input:  ase.Atoms + orbital shells per element (e.g. {'Mn': 'spd', 'Te': 'p'}).
 Output: a WannierBerri ProjectionsSet whose orbitals
@@ -574,6 +574,211 @@ def find_bonds(atoms, i, ops, cutoff=None, tol_shell=0.1):
     return _symmetrize_bonds(nb, ops)
 
 
+def _neighbours_at(atoms, centre_cart, cutoff):
+    """Same as _neighbours but around an arbitrary Cartesian point."""
+    P, C = atoms.get_positions(), atoms.cell[:]
+    sh = np.array([[x, y, z] for x in (-1, 0, 1) for y in (-1, 0, 1)
+                   for z in (-1, 0, 1)])
+    v = (P[None, :, :] + sh[:, None, :] @ C - centre_cart).reshape(-1, 3)
+    d = np.linalg.norm(v, axis=1)
+    return v[(d > 1e-3) & (d < cutoff)]
+
+
+def find_bonds_at(atoms, q, ops, cutoff=None, tol_shell=0.1):
+    """Bond vectors from a fractional position, closed under its site group.
+
+    No CrystalNN branch: it needs a real site in the structure, and the whole
+    point here is that the position may be empty. Falls back to the first
+    coordination shell, which is what find_bonds does when pymatgen is absent.
+    """
+    centre = np.asarray(q, float) @ np.array(atoms.cell[:])
+    if cutoff is not None:
+        nb = _neighbours_at(atoms, centre, cutoff)
+    else:
+        far = _neighbours_at(atoms, centre, 6.0)
+        if len(far) == 0:
+            return np.zeros((0, 3))
+        d = np.linalg.norm(far, axis=1)
+        nb = far[d < d.min() + tol_shell]
+    if len(nb) == 0:
+        return np.zeros((0, 3))
+    return _symmetrize_bonds(nb, ops)
+
+
+def parse_position(position):
+    """Fractional coordinates from floats, ints, or strings.
+    """
+    from fractions import Fraction
+
+    def one(v):
+        if isinstance(v, (int, float, np.floating, np.integer)):
+            return float(v)
+        v = str(v).strip()
+        try:
+            return float(v)
+        except ValueError:
+            pass
+        try:
+            f = Fraction(v)
+        except ValueError as e:
+            raise ValueError(f"cannot parse position component {v!r}") from e
+        if f.denominator > 10**6:
+            f = f.limit_denominator(10**6)
+        return float(f)
+
+    if isinstance(position, str):
+        position = position.split(",")
+    return np.array([one(v) for v in position], dtype=float)
+
+
+def build_at(atoms, position, shells, cutoff=None, prefix="", symprec=1e-4,
+             seed=0, verbose=True, spacegroup=None, fallback="best_hybrid",
+             weight_fn=None, label=None):
+    """build(), for ONE Wyckoff position -- occupied or empty.
+
+    Everything build does per site is geometric: site_group(cell, q) asks which
+    operations fix q modulo lattice, which is defined at any point in the cell.
+    So the SALC construction transfers unchanged to an empty Wyckoff position,
+    which is exactly the obstructed-atomic-limit case an EBR search needs
+    (`1/8,1/8,1/8:sp3` in the WannierBerri tutorial).
+
+    Two things had to move:
+      * find_bonds takes an atom index and prefers CrystalNN, which needs a real
+        site. find_bonds_at takes a position and uses the coordination-shell
+        fallback.
+      * naming used ds.wyckoffs[i] and the element symbol. `label` replaces it.
+
+    position : fractional coordinates, NUMERIC. A Wyckoff position with a free
+        parameter (x,0,0) has no single site group until x is fixed, so pick a
+        representative value -- any generic one works, since the stabiliser is
+        constant along the orbit, but avoid values that accidentally land on a
+        higher-symmetry position. |G_q| is printed so you can check.
+
+    weight_fn : as in build, called as weight_fn(None, shells, ops) since there
+        is no atom index. Pass None unless your weight can be evaluated at an
+        arbitrary point.
+
+    Returns (ProjectionsSet, SiteResult).
+    """
+    from irrep.spacegroup import SpaceGroup
+    from wannierberri.symmetry.projections import Projection, ProjectionsSet
+
+    if fallback not in FALLBACKS:
+        raise ValueError(f"fallback must be one of {FALLBACKS}, got {fallback!r}")
+
+    cell = (np.array(atoms.cell[:]), atoms.get_scaled_positions(),
+            atoms.get_atomic_numbers())
+    sg = spacegroup if spacegroup is not None else SpaceGroup.from_cell(
+        cell=cell, spinor=False, include_TR=True)
+
+    q = parse_position(position) % 1.0
+    sh = parse_shells(shells)
+    ops = site_group(cell, q, symprec)
+    reps = [shell_rep(sh, R) for R in ops]
+    if label is None:
+        label = "q" + "_".join(f"{x:.3f}".replace(".", "p").replace("-", "m")
+                               for x in q)
+    base = f"{prefix}{label}"
+
+    res = SiteResult(-1, "", q, "", f"|G_q|={len(ops)}", sh)
+    T = None
+    if cutoff is not False:
+        try:
+            nb = find_bonds_at(atoms, q, ops, cutoff=cutoff)
+            if len(nb):
+                w = None if weight_fn is None else weight_fn(None, sh, ops)
+                if fallback == "minimal_shell":
+                    T, used = minimal_shell_hybrids(nb, ops, sh, seed=seed,
+                                                    weight=w)
+                    if len(used) < len(sh):
+                        rest = "".join(NAME_OF[l] for l in sh if l not in used)
+                        res.note = ("minimal-shell hybrid on "
+                                    f"{''.join(NAME_OF[l] for l in used)}, "
+                                    f"{rest} left as complement")
+                else:
+                    Tc, uniq = hybrids_from_bonds(
+                        nb, ops, sh, seed=seed, weight=w,
+                        optimize=(fallback == "best_hybrid"))
+                    if uniq or fallback == "best_hybrid":
+                        T = Tc
+                        if not uniq:
+                            res.note = "non-unique -> optimised hybrid"
+        except ValueError as e:
+            res.note = str(e)
+
+    if T is not None:
+        register(f"{base}_hyb", T, sh, ops)
+        res.orbital_names, res.hybrid = [f"{base}_hyb"], True
+        comp = null_space(T, rcond=1e-8).T
+        if comp.shape[0]:
+            for k, (M, d, m) in enumerate(isotypic_components(
+                    [comp @ D @ comp.T for D in reps], seed=seed)):
+                nm = f"{base}_rest{k}"
+                register(nm, M @ comp, sh, ops)
+                res.orbital_names.append(nm)
+    elif fallback == "shells":
+        if cutoff is not False and not res.note:
+            res.note = "hybrids not unique -> plain shells"
+        res.orbital_names = [NAME_OF[l] for l in sh]
+    else:
+        if cutoff is not False and not res.note:
+            res.note = "hybrids not unique -> isotypic components"
+        for k, (M, d, m) in enumerate(isotypic_components(reps, seed=seed)):
+            nm = f"{base}_{k}"
+            register(nm, M, sh, ops)
+            res.orbital_names.append(nm)
+
+    pset = ProjectionsSet()
+    for nm in res.orbital_names:
+        pset.add(Projection(position_num=[q], orbital=nm, spacegroup=sg,
+                            rotate_basis=True))
+
+    if verbose:
+        tag = "bond-pointing hybrid" if res.hybrid else "isotypic components"
+        print(f"{label} @ {np.round(q, 4)}  |G_q|={len(ops):2d}  "
+              f"{''.join(NAME_OF[l] for l in sh)} -> {tag}: "
+              f"{res.orbital_names}" + (f"   [{res.note}]" if res.note else ""))
+        for nm in res.orbital_names:
+            for member in wb_orb.orbitals_sets_dic.get(nm, []):
+                terms = " ".join(f"{c:+.3f}|{o}>" for o, c
+                                 in wb_orb.hybrids_coef.get(member, {}).items())
+                print(f"      {member:24s} = {terms}")
+    return pset, res
+
+
+def build_trial_set(atoms, wyckoff_shells, spacegroup=None, both=True, **kw):
+    """Alphabet of trial projections for EBRsearcher.
+
+        wyckoff_shells = [([0, 0, 0], "sp"), ([0.125]*3, "sp"), ...]
+
+    both=True adds BOTH granularities per entry: the bond hybrid (with its
+    complement) and the irrep-pure isotypic components. Hybrids double as the
+    initial guess, so a hybrid solution is directly usable; components are finer
+    -- a composite like sp3 locks A1 and T2 in a fixed ratio and cannot express
+    a manifold needing 2xA1 + 1xT2. EBRsearcher orders solutions by increasing
+    num_wann, so the compact hybrid ones still surface first.
+
+    Note register() writes into WannierBerri's global orbital dictionary, so
+    names must stay unique across the whole alphabet; `label` per entry, or the
+    position-derived default, takes care of that.
+    """
+    from wannierberri.symmetry.projections import ProjectionsSet
+    out = ProjectionsSet()
+    infos = []
+    for entry in wyckoff_shells:
+        pos, sh = entry[0], entry[1]
+        lab = entry[2] if len(entry) > 2 else None
+        modes = [("hyb", None)] if not both else [("hyb", None),
+                                                  ("cmp", False)]
+        for tag, cut in modes:
+            p, r = build_at(atoms, pos, sh, cutoff=cut, spacegroup=spacegroup,
+                            label=(f"{lab}_{tag}" if lab else None), **kw)
+            for proj in p.projections:
+                out.add(proj)
+            infos.append(r)
+    return out, infos
+
+
 def build(atoms, shells, cutoff=None, prefix="", symprec=1e-4, seed=0,
           verbose=True, spacegroup=None, fallback="best_hybrid", weight_fn=None,
           select_threshold=None):
@@ -655,7 +860,7 @@ def build(atoms, shells, cutoff=None, prefix="", symprec=1e-4, seed=0,
                 "SALC invariance analysis would MISS operations. Raise symprec "
                 "or check the two structures agree.")
     else:
-        sg = SpaceGroup.from_cell(cell=cell, spinor=False,include_TR=True)
+        sg = SpaceGroup.from_cell(cell=cell, spinor=False)
     symbols = atoms.get_chemical_symbols()
     scaled = atoms.get_scaled_positions()
 

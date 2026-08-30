@@ -19,25 +19,6 @@ def band_blocks(eps_kn, gap_thres=0.1):
 
         min_k eps[k, n+1] - max_k eps[k, n] > gap_thres
 
-    which is the textbook definition and is immune to how densely the mesh
-    samples each band.
-
-    WHY NOT POOLED EIGENVALUES.  The previous version sorted all eigenvalues
-    together and split wherever consecutive values differed by more than
-    gap_thres.  On any realistic mesh that shreds the manifold: Si has ~116
-    valence eigenvalues spread over ~12 eV, so the mean spacing WITHIN a band is
-    about 0.1 eV -- the same size as gap_thres.  Every band fragments into
-    dozens of one-point "blocks", the block containing the VBM is a single
-    eigenvalue, and the window bottom comes out at the VBM instead of -6.65 eV.
-
-    That is also, belatedly, why the smeared DOS never failed.  I argued the
-    Gaussian was a bug because it displaces band edges by ~6.8 sigma, and it
-    does -- but it was simultaneously doing load-bearing work: convolving a
-    discrete k-sample into a continuous manifold, so a band reads as one
-    connected region rather than N isolated points.  Removing the smearing
-    without replacing that function is what broke the window.  Working on band
-    indices removes the need for either.
-
     Returns [(n_start, n_stop, e_lo, e_hi), ...], n_stop inclusive.
     """
     lo_n = eps_kn.min(axis=0)
@@ -51,11 +32,6 @@ def band_blocks(eps_kn, gap_thres=0.1):
 
 def emax_from_band_count(eps_kn, emin, nwann, K=1.2):
     """Smallest emax with N_k(emin, emax) >= ceil(K * nwann) at EVERY k.
-
-    This is why K survives the move to projectability: disentanglement needs
-    MORE states than it keeps, and the extra ones are by construction the poorly
-    projectable ones.  A pure projectability criterion would shrink the outer
-    window onto the frozen window and leave nothing to disentangle with.
 
     Exact per k.  Integrating a smeared DOS to K*nwann is a BZ-AVERAGED proxy,
     and an average can be satisfied while one k-point fails.

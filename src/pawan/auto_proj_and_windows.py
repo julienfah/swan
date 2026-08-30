@@ -48,42 +48,8 @@ def get_proj_set(
     )
     space_group = SpaceGroup.from_gpaw(calc)
     if hybridize_on_site:
-        """#perform hybridization for each atom
-        selected_orbitals_l_list = defaultdict(list) #convert to list of {iatom : list of all l values of iatom}
-        hybrydized_orbitals = []
-        for i, (n,l) in selected_orbitals:
-            selected_orbitals_l_list[i].append(l)
-        for i, l_list in selected_orbitals_l_list.items():
-            selected_hybridized_orbitals = hybridize_orbitals(calc.atoms, calc.atoms.positions[i], orbitals=l_list)
-            hybrydized_orbitals.extend([(i, (4,l)) for l in selected_hybridized_orbitals])
-        selected_orbitals = hybrydized_orbitals"""
-        print("-"*80,"\n")
-        """p_kn, w, blocks, cand_set = candidate_scan(
-            calc=calc,
-            spacegroup=space_group,
-            from_gpaw=WannierData.from_gpaw,
-            spin_channel=0,
-            shells=(0,1 ),
-            unitary_params=dict(nbands_upper_skip=2)
-        )"""
-        """res = candidate_scan(calc=calc, spacegroup=space_group,
-                     from_gpaw=WannierData.from_gpaw, spin_channel=0,
-                     shells=(0, 1,2), pdos_path=f"{out_dir}/{seed}/{seed}-pdos.png",unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=2)
-        )
-        p_kn, w, blocks, = res.eps_kn, res.w, res.blocks
-        #print("candidate set:", cand_set)
-        print("sum of p_kn:", np.sum(p_kn,axis=1), np.sum(p_kn,axis=0))"""
-        """selected_orbitals, outer_win, frozen_win, nwann = amn_projection_method(
-            calc=calc, spacegroup=space_group, from_gpaw=WannierData.from_gpaw,
-            seed=seed, in_dir=in_dir, out_dir=out_dir,
-            K=K, gap_thres=5.0, objective_wd=objective_wd, shells=(0, 1, 2),margin=1.1,verbose=True,alpha=0.33)
-        print("selected orbitals after amn_projection_method:", selected_orbitals)
-        print("outer_win:", outer_win, "frozen_win:", frozen_win, "nwann:", nwann)
-        print("-"*80,"\n")"""
-        
-        #exit()
         shells_dict = {calc.atoms[iatom].symbol: [l for iatom2, (n, l) in selected_orbitals if iatom2 == iatom] for iatom, (n, l) in selected_orbitals}
-        weight_func = projectability_from_gpaw(calc, window=outer_win,n_select="valence")
+        #weight_func = projectability_from_gpaw(calc, window=outer_win,n_select="valence")
         proj_set, salc_sites = build(calc.atoms, shells_dict, prefix=f"{seed}_",weight_fn=None,fallback="minimal_shell")
         assert proj_set.num_wann == nwann, \
         f"projection set has {proj_set.num_wann} WF but windows were sized for {nwann}"

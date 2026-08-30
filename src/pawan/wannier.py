@@ -37,7 +37,7 @@ def wannierize(
         spin_channel=spin_channel,
         projections=proj_set,
         irreducible=True,
-        files=["amn", "mmn", "eig", "symmetrizer", "unk"],
+        files=["amn", "mmn", "eig", "symmetrizer"],#, "unk"],
         unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
         unitary_params=unitary_params,
         return_bandstructure=True,
@@ -54,10 +54,10 @@ def wannierize(
     )
     wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
     # log spreads
-    plot_wannier(
+    """plot_wannier(
         seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
         reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
-    )
+    )"""
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
             f.write(f"Center: {center}, Spread: {spread}\n")
