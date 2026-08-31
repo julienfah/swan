@@ -18,3 +18,8 @@ wheels/
 #log files
 *.log
 logs/
+#MolSym local cloned package
+MolSym/
+#additional tests
+test_*/
+test-*/

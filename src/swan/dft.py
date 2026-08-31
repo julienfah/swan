@@ -8,7 +8,7 @@ from ase.io import read
 from gpaw.mpi import world
 
 
-from pawan.utils import (
+from swan.utils import (
     adaptative_g_grid,
     standardize_cell,
     adaptative_high_sym_k_grid,

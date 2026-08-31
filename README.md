@@ -1,9 +1,9 @@
-# PAWAN - PAW dft computation with GPAW into WannierBerri powered wanierisation 
+# swan - PAW dft computation with GPAW into WannierBerri powered wanierisation 
 This is a very first draft to create an automated workflow for wannierisation, based on https://github.com/TMM-TUDA/Automatic-wannier-flow and the afferent paper by Zhang et al., in GPAW + WannierBerri.
 
 ## Repo structure
 ```
-PAWAN/
+swan/
 |
 |-test/
 |   |-Si2/
@@ -11,7 +11,7 @@ PAWAN/
 |   |   |-Si2-wannierized_bands.png
 |   |-...
 |
-|-src/pawan
+|-src/swan
 |       |-auto_proj_and_window.py
 |       |-dft.py
 |       |-extend_proj_set.py
@@ -36,9 +36,9 @@ Optional inputs : run with --help to get their description.
 
 How to run: 
 
-If you are using uv simply run ```uv run pawan <input.cif>```
+If you are using uv simply run ```uv run swan <input.cif>```
 
-If you use a standard pip managed python, create a venv with the provided requirements.txt, activate it and run ```python3 -m pawan <input.cif>```
+If you use a standard pip managed python, create a venv with the provided requirements.txt, activate it and run ```python3 -m swan <input.cif>```
 
 If you have an MPI-enabled installation of GPAW (to check : ```gpaw info```), you can run the code with ```mpirun -np <number of processes>``` to allow parallelization over multiple cores. 
 Outputs: logs and output files, including a plot of the bands appear in ```test/<chemical formula>```

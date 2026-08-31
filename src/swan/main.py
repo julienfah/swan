@@ -4,12 +4,12 @@ from pathlib import Path as Path_
 from ase.io import read
 from gpaw.mpi import world, serial_comm
 
-from pawan.utils import parse_args, standardize_cell,adaptative_nscf_nbands
-from pawan.dft import full_dft_run
-from pawan.wannier import wannierize, interpolate_bands
-from pawan.auto_proj_and_windows import get_proj_set
-from pawan.metrics import least_square_deviation_within_frozen,max_deviation_within_frozen
-from pawan.ebr_method import EBR_method
+from swan.utils import parse_args, standardize_cell,adaptative_nscf_nbands
+from swan.dft import full_dft_run
+from swan.wannier import wannierize, interpolate_bands
+from swan.auto_proj_and_windows import get_proj_set
+from swan.metrics import least_square_deviation_within_frozen,max_deviation_within_frozen
+from swan.ebr_method import EBR_method
 
 def plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed, out_dir,in_dir):
     """

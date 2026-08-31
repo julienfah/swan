@@ -1,7 +1,7 @@
 from gpaw import GPAW
 from pathlib import Path as Path_
 import numpy as np
-from pawan.utils import find_emax_from_dos
+from swan.utils import find_emax_from_dos
 from irrep.spacegroup import SpaceGroup
 from collections import defaultdict
 from wannierberri.symmetry.wyckoff_position import split_into_orbits
@@ -9,11 +9,11 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm, world
 
-from pawan.symmetry import build,describe_orbital,projectability_from_gpaw,site_group
-from pawan.extend_proj_set import extend_to_energy_window
-from pawan.utils import safety_check_windows
-#from pawan.candidate_scan import candidate_scan, amn_projection_method
-from pawan.zhang_amn import Zhang_projection_method_amn
+from swan.symmetry import build,describe_orbital,projectability_from_gpaw,site_group
+from swan.extend_proj_set import extend_to_energy_window
+from swan.utils import safety_check_windows
+#from swan.candidate_scan import candidate_scan, amn_projection_method
+from swan.zhang_amn import Zhang_projection_method_amn
 from wannierberri.w90files import WannierData
 
 def get_proj_set(
