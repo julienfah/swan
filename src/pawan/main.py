@@ -83,6 +83,8 @@ def auto_workflow(
     hybridize_on_site=True,
     pdos=False,
     alphabet="shells+hyb",
+    validate_n_max=5,
+    EBR_margin=2,
     verbose=False
 ):
     n_bands = adaptative_nscf_nbands(
@@ -135,7 +137,7 @@ def auto_workflow(
                     hybridize_on_site=hybridize_on_site,
                 )
             else:
-                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=ecut, comm=serial_comm, only_on_site=True, verbose=verbose,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,alphabet=alphabet,k_values=(K,K+0.3))
+                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=ecut, comm=serial_comm, only_on_site=True, verbose=verbose,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True,validate_n_max=validate_n_max,margin=EBR_margin, eta_ok=20.0, spread_ok=10.0,alphabet=alphabet,k_values=(K,K+0.3))
 
             if not skip_wannier:
                 unitary_params = dict(

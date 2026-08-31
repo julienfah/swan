@@ -454,4 +454,18 @@ def parse_args():
         dest="alphabet",
         help="Alphabet for EBR method (default: shells+hyb)",
     )
+    parser.add_argument(
+        "--validate-n-max",
+        type=int,
+        default=None,
+        dest="validate_n_max",
+        help="Maximum number of projection sets wannierized in the EBR validation step (default: 5)",
+    )
+    parser.add_argument(
+        "--EBR-margin",
+        type=float,
+        default=None,
+        dest="EBR_margin",
+        help="Margin for validation : max number of wannier functions in the considered projection sets is margin*number of bands in the frozen window (default: 2.0)",
+    )
     return parser.parse_args()
