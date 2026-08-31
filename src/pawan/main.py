@@ -80,17 +80,11 @@ def auto_workflow(
     skip_wannier=False,
     only_dft=False,
     only_wannier=False,
-    hybridize_on_site=False,
-    EBR=False,
+    hybridize_on_site=True,
+    pdos=False,
     alphabet="shells+hyb",
     verbose=False
 ):
-    """if not skip_scf:
-        scf(atoms,auto_nk_grid=auto_nk_grid,ecut=ecut,density_conv=density_conv_scf,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)
-
-    n_bands = adaptative_nscf_nbands(seed=seed,dir=dir,nbands_per_atom=nbands_per_atom,nbands=nbands,n_bands_per_valence_el=nbands_per_valence_el)
-    if not skip_nscf:
-        nscf(nbands=n_bands,unconverged_bands=unconverged_bands,seed=seed,dir=dir,NK=nk,NKFFT=nkfft)"""
     n_bands = adaptative_nscf_nbands(
         seed=seed,dir=in_dir, atoms=atoms, nbands_per_atom=nbands_per_atom, nbands=nbands, n_bands_per_valence_el=nbands_per_valence_el
     )
@@ -128,7 +122,7 @@ def auto_workflow(
             print(f"DFT calculations completed for {seed}. Proceeding with Wannierization.")
             dos_kwargs = {"spin": spin_channel, "npts": npts_dos, "width": dos_width}
 
-            if not EBR:
+            if pdos:
                 proj_set, outer_win, frozen_win, nwann = get_proj_set(
                     K=K,
                     seed=seed,
@@ -141,7 +135,7 @@ def auto_workflow(
                     hybridize_on_site=hybridize_on_site,
                 )
             else:
-                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=500, comm=serial_comm, only_on_site=True, verbose=verbose,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,hybrids=hybridize_on_site,alphabet=alphabet)
+                proj_set, frozen_win, outer_win = EBR_method(in_dir=in_dir, out_dir=out_dir, seed=seed, ecut=ecut, comm=serial_comm, only_on_site=True, verbose=verbose,K=K, gap_thres=gap_thres,objective_wd=objective_wd,validate=True, eta_ok=20.0, spread_ok=10.0,alphabet=alphabet,k_values=(K,K+0.3))
 
             if not skip_wannier:
                 unitary_params = dict(

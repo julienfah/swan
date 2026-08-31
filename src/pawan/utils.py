@@ -434,18 +434,11 @@ def parse_args():
         "--input-dir", default=None, dest="input_dir", help="Directory for input dft files : skips SCF and NSCF and wannierizes using existing files in dir. (default: test)"
     )
     parser.add_argument(
-        "--hybridize-on-site",
+        "--pdos",
         action="store_true",
         default=None,
-        dest="hybridize_on_site",
-        help="Try to hybridize orbitals on atomic sites, if possible (default: False)",
-    )
-    parser.add_argument(
-        "--EBR",
-        action="store_true",
-        default=None,
-        dest="EBR",
-        help="Use EBR method to determine projections and windows (default: False)",
+        dest="pdos",
+        help="Compute projected density of states (PDOS) after Wannierization (default:False)",   
     )
     parser.add_argument(
         "--verbose",

@@ -226,7 +226,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
                dedupe_prefer='hybrid', dedupe_rank_first=True,
                dedupe_by='span', band_gram=True,
                validate=False, validate_n_max=5, validate_kwargs=None,
-               eta_ok=20.0, spread_ok=10.0, hybrids=True,
+               eta_ok=20.0, spread_ok=10.0,
                per_size_window=True,
                alphabet='isotypic+hyb',
                block_dedupe='hybrid', k_values=(1.5,1.8),
@@ -377,7 +377,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         # cross-shell and within-shell mixtures no radial decomposition can
         # produce (CaMg2Bi2's `-0.0149|s> -0.9999|dz2>` and its 2-dim piece
         # inside a merged 4-dim d block).
-        if with_hyb and hybrids:
+        if with_hyb:
             pset, _ = build_at(atoms=calc.atoms, position=p.split(','),
                                shells=['s', 'p', 'd'],
                                spacegroup=spacegroup, label=f"WP_{p}_",
