@@ -9,7 +9,7 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm, world
 
-from pawan.salc_M3 import build,describe_orbital,projectability_from_gpaw,site_group
+from pawan.symmetry import build,describe_orbital,projectability_from_gpaw,site_group
 from pawan.extend_proj_set import extend_to_energy_window
 from pawan.utils import safety_check_windows
 #from pawan.candidate_scan import candidate_scan, amn_projection_method

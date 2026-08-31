@@ -171,7 +171,8 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
         each K is wannierised, tagged and recorded separately. The sweep for a
         candidate STOPS at the first K that is good enough (eta <= eta_ok and
         max spread <= spread_ok), so the extra cost is paid only where the
-        first K does not work.
+        first K does not work. They must be BIGGER than the value past to 
+        build the EBRsearcher.
 
         K sets how many bands the disentanglement gets per Wannier function.
         Too small starves it; too large drags in states that do not belong to
@@ -283,13 +284,22 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
             else:
                 ow = outer_window_fn(int(nwann), K=k)
             rec["outer_window"] = [float(ow[0]), float(ow[1])]
-            wannierize_fn(proj_set=pset, outer_win=ow,
-                          frozen_win=froz_window, seed=seed,
-                          out_dir=str(root), in_dir=in_dir,
-                          calc_nscf_irred=calc, spin_channel=spin_channel,
-                          **wkw)
+            try:
+                wannierize_fn(proj_set=pset, outer_win=ow,
+                            frozen_win=froz_window, seed=seed,
+                            out_dir=str(root.parent.parent), in_dir=in_dir,
+                            calc_nscf_irred=calc, spin_channel=spin_channel, recompute_files=False,
+                            **wkw)
+            except AssertionError as e:
+                print(f"  [{tag}] wannierize() failed with {type(e).__name__}: {e}")
+                print("  retrying with recompute_files=True")
+                wannierize_fn(proj_set=pset, outer_win=ow,
+                                            frozen_win=froz_window, seed=seed,
+                                            out_dir=str(root.parent.parent), in_dir=in_dir,
+                                            calc_nscf_irred=calc, spin_channel=spin_channel, recompute_files=True,
+                                            **wkw)
             bands, wb_path = interpolate_fn(
-                seed=seed, out_dir=str(root), in_dir=in_dir,
+                seed=seed, out_dir=str(root.parent.parent), in_dir=in_dir,
                 calc_nscf_irred=calc, npoints=npoints)
             # WannierBerri returns the interpolated eigenvalues as
             # bands.Enk.data, shape (nk, nwann); the k-points come from
@@ -306,7 +316,8 @@ def validate_candidates(shortlist, blocks, trial_projections, calc, seed,
                                          energies, kpts_w,
                                          metric_outer or outer_window,
                                          froz_window))
-            spreads = Path(root) / seed / f"{seed}_wannier_spreads.txt"
+            d = Path(root.parent.parent)
+            spreads = Path(root.parent.parent) / seed / f"{seed}_wannier_spreads.txt"
             if spreads.exists():
                 (d / "spreads.txt").write_text(spreads.read_text())
                 rec["max_spread"] = _max_spread(spreads)

@@ -166,6 +166,7 @@ def auto_workflow(
                     spin_channel=spin_channel,
                     unitary_params=unitary_params,
                     wannierization_params=wannierization_params,
+                    ecut_pw=ecut,
                 )
 
             bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints)

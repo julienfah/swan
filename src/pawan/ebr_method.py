@@ -647,7 +647,7 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
             # (which passed None) did not, on the same material and the same
             # alphabet family.
             pset_fn=(lambda t: _pset_of(t[0])),
-            **(validate_kwargs or {}),unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=n_skipped_bands))
+            **(validate_kwargs or {}),unitary_params=dict(error_threshold=0.1, warning_threshold=0.01, nbands_upper_skip=n_skipped_bands),ecut_pw=ecut)
         best = min((r for r in results if np.isfinite(r["eta"])),
                    key=lambda r: r["eta"], default=None)
         K_best = (best or {}).get("K", K)
