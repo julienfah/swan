@@ -5,8 +5,8 @@ from wannierberri.symmetry.wyckoff_position import WyckoffPosition
 import spglib
 from pyxtal import Group
 
-from swan.utils import safety_check_windows
-from swan.utils import find_emax_from_dos
+from swan.utils.utils import safety_check_windows
+from swan.utils.utils import find_emax_from_dos
 
 """
 EXPERIMENTAL and UNTESTED : is probably unfit for SAWF altough it uses Wyckoff positions.

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .amn_projectability import (orbital_window_fraction,
+from ..projectability.amn_projectability import (orbital_window_fraction,
                                  subset_projectability)
 
 __all__ = ["write_selection_log"]

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .amn_projectability import subset_projectability
+from ..projectability.amn_projectability import subset_projectability
 
 __all__ = ["combination_irreps", "span_projector", "group_by_span",
            "_full_rank", "_cond0",

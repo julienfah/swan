@@ -1,6 +1,8 @@
 annotated-types==0.7.0
+appnope==0.1.4
 arro3-core==0.8.1
 ase==3.29.0
+asttokens==3.0.2
 attrs==26.1.0
 autopep8==2.3.2
 bibtexparser==1.4.4
@@ -11,11 +13,14 @@ certifi==2026.6.17
 charset-normalizer==3.4.7
 click==8.4.1
 colorama==0.4.6
+comm==0.2.3
 contourpy==1.3.3
 cycler==0.12.1
+debugpy==1.8.21
 deltalake==1.5.1
 deprecated==1.3.1
 emmet-core==0.87.1
+executing==2.2.1
 filelock==3.29.4
 flake8==7.3.0
 flexcache==0.3
@@ -25,19 +30,27 @@ fortio==0.4
 gpaw==25.7.0
 gpaw-data==1.0.1
 h5py==3.16.0
+hsnf==0.4.0
 idna==3.18
 importlib-metadata==9.0.0
 inflect==7.5.0
-irrep==2.6.3
+ipykernel==7.3.0
+ipython==9.16.1
+ipython-pygments-lexers==1.1.1
+irrep @ git+https://github.com/irreducible-representations/irrep.git@5a82e29d3f389776627e6a5438b745c2ee5cd48a
+jedi==0.20.0
 jmespath==1.1.0
 joblib==1.5.3
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+jupyter-client==8.9.1
+jupyter-core==5.9.1
 kiwisolver==1.5.0
 latexcodec==3.0.1
 llvmlite==0.47.0
 lxml==6.1.1
 matplotlib==3.11.0
+matplotlib-inline==0.2.2
 mccabe==0.7.0
 -e file:///Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan/MolSym
 monty==2026.5.18
@@ -47,6 +60,7 @@ mpi4py==4.1.2
 mpmath==1.3.0
 msgpack==1.2.1
 narwhals==2.22.1
+nest-asyncio2==1.7.2
 networkx==3.6.1
 numba==0.65.1
 numpy==2.4.6
@@ -54,14 +68,18 @@ orjson==3.11.9
 packaging==26.2
 palettable==3.3.3
 pandas==3.0.3
--e file:///Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan
+parso==0.8.7
+pexpect==4.9.0
 pillow==12.2.0
 pint==0.25.3
 platformdirs==4.10.0
 plotly==6.8.0
+prompt-toolkit==3.0.53
 protobuf==7.35.1
 psutil==7.2.2
+ptyprocess==0.7.0
 pubchempy==1.0.5
+pure-eval==0.2.3
 pyarrow==24.0.0
 pybtex==0.26.1
 pycodestyle==2.14.0
@@ -70,6 +88,7 @@ pydantic-core==2.46.4
 pydantic-settings==2.14.2
 pyfftw==0.15.1
 pyflakes==3.4.0
+pygments==2.20.0
 pymatgen==2026.5.4
 pymatgen-core==2026.5.18
 pymatgen-io-validation==0.1.2
@@ -79,6 +98,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 pyxtal==1.1.1
 pyyaml==6.0.3
+pyzmq==27.1.0
 qcelemental==0.50.4
 ray==2.55.1
 referencing==0.37.0
@@ -87,21 +107,31 @@ rpds-py==2026.5.1
 ruamel-yaml==0.19.1
 s3transfer==0.19.0
 scipy==1.18.0
+setuptools==83.0.0
+setuptools-scm==10.2.1
 six==1.17.0
 spglib==2.7.0
+spgrep==0.6.0
+stack-data==0.6.3
+-e file:///Users/julfa/Documents/EPFL/SummerInTheLab/automation/pawan
 sympy==1.14.0
 tabulate==0.10.0
 termcolor==3.3.0
 toml==0.10.2
+tornado==6.5.8
 tqdm==4.68.3
+traitlets==5.16.1
 typeguard==4.5.2
 typing-extensions==4.15.0
 typing-inspection==0.4.2
 uncertainties==3.2.3
 urllib3==2.7.0
 vasprun-xml==1.0.4
+vcs-versioning==2.2.2
 wannier90io==0.1.0b1
-wannierberri==26.4.6
+wannierberri @ git+https://github.com/wannier-berri/wannier-berri.git@e046ddc4bfe026ba1f9af2376f04babac5677425
+wcwidth==0.8.2
+wheel==0.47.0
 wrapt==2.2.2
 xmltodict==1.0.4
 zipp==4.1.0

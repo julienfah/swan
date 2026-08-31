@@ -49,7 +49,7 @@ from scipy.linalg import block_diag, null_space
 
 from wannierberri.symmetry import orbitals as wb_orb
 
-from .sphere_projectability import (
+from .projectability.sphere_projectability import (
     bound_channels,
     collect_projections,
     describe_metric,
@@ -1138,7 +1138,7 @@ def projectability_from_gpaw(calc, window, spin=0, atol=0.25,
         # MUST match the backend the driver used -- get_proj_set should pass it
         # explicitly.  Defaults to sphere because the AO path does not yet
         # support plane-wave wavefunctions.
-        from . import sphere_projectability as backend
+        from .projectability import sphere_projectability as backend
     S_wb = gpaw_to_wb()
     _cache = {}
 

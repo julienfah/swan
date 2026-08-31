@@ -5,9 +5,9 @@ from ase.dft.bandgap import bandgap
 
 from .amn_projectability import (pdos_from_weights, projectability_from_amn,
                                  true_overlap, weights_from_amn)
-from .candidate_scan import build_candidate_set, extract_amn, extract_eig
+from ..candidate_scan import build_candidate_set, extract_amn, extract_eig
 from .sphere_projectability import equivalent_atoms
-from .utils import find_emax_from_dos, safety_check_windows
+from ..utils.utils import find_emax_from_dos, safety_check_windows
 
 L_NAME = {0: "s", 1: "p", 2: "d", 3: "f"}
 

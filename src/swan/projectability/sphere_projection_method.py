@@ -73,8 +73,8 @@ from ase.dft.bandgap import bandgap
 from gpaw import GPAW
 from gpaw.mpi import serial_comm, world
 
-from . import ao_projectability as _ao
-from . import sphere_projectability as _sph
+from .. import ao_projectability as _ao
+from .. import sphere_projectability as _sph
 from .sphere_projectability import (
     atomicity,
     frozen_band_count,

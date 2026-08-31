@@ -25,17 +25,17 @@ import numpy as np
 from gpaw import GPAW
 from math import ceil
 from pathlib import Path as Path_
-from swan.utils import find_emax_from_dos
+from swan.utils.utils import find_emax_from_dos
 from swan.auto_proj_and_windows import initial_DOS_energy_scan
 from swan.symmetry import (NAME_OF, build_at, describe_orbital,
                            isotypic_components, parse_position, parse_shells,
                            register, shell_rep, site_group)
-from swan.amn_projectability import orbital_window_fraction, true_overlap
+from swan.projectability.amn_projectability import orbital_window_fraction, true_overlap
 from swan.candidate_scan import _stack_payload
-from swan.ebr_select import (dedupe_combinations, rank_combinations,
+from swan.ebr.ebr_select import (dedupe_combinations, rank_combinations,
                               score_combinations)
-from swan.ebr_log import write_selection_log
-from swan.validate_candidates import combination_tag
+from swan.ebr.ebr_log import write_selection_log
+from swan.ebr.validate_candidates import combination_tag
 
 x, y, z = symbols('x y z')
 _locals = {'x': x, 'y': y, 'z': z}
@@ -609,10 +609,10 @@ def EBR_method(in_dir, out_dir, seed, ecut, only_on_site=True, calc=None,
         print(f"  validating: accept the pick if eta <= {eta_ok} and max spread "
               f"<= {spread_ok}, otherwise sweep up to {validate_n_max} "
               "alternatives")
-        from swan.ebr_select import shortlist_for_validation
-        from swan.validate_candidates import validate_candidates
+        from swan.ebr.ebr_select import shortlist_for_validation
+        from swan.ebr.validate_candidates import validate_candidates
         from swan.wannier import wannierize, interpolate_bands
-        from swan.metrics import least_square_deviation_within_frozen
+        from swan.utils.metrics import least_square_deviation_within_frozen
 
         short = shortlist_for_validation(scored, S, blocks, trial_projections,
                                          in_window=in_window,
