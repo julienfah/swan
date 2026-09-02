@@ -11,8 +11,8 @@ from typing import NamedTuple
 
 from gpaw.mpi import serial_comm, world
 
-from .utils.windows import band_blocks, cap_frozen_window, emax_from_band_count
-from .projectability.amn_projectability import (channel_occupancy, frozen_from_projectability,
+from ..utils.windows import band_blocks, cap_frozen_window, emax_from_band_count
+from ..projectability.amn_projectability import (channel_occupancy, frozen_from_projectability,
                                 greedy_select, select_by_occupancy,
                                 window_rank_check,
                                 subset_projectability,
@@ -406,7 +406,7 @@ def gpaw_orbital_ldos(calc, blocks, energies, spin=0, width=0.1, npts=1001,
     If the two panels disagree about which channel dominates a manifold, one of
     them is wrong -- most likely the m-ordering or the block map.
     """
-    from .projectability.sphere_projectability import equivalent_atoms
+    from ..projectability.sphere_projectability import equivalent_atoms
 
     try:
         eq = equivalent_atoms(calc.atoms, symprec)
@@ -558,7 +558,7 @@ def empty_site_candidates(atoms, spacegroup, n_grid=24, min_dist=1.0,
 
     # bond midpoints (not generally special positions, but often where a
     # covalent Wannier centre wants to sit)
-    from .projectability.sphere_projectability import equivalent_atoms
+    from ..projectability.sphere_projectability import equivalent_atoms
     eq = equivalent_atoms(atoms, symprec)
     for i in sorted(set(eq)):
         v = pos[None, :, :] + (shifts @ C)[:, None, :] - pos[i]
@@ -572,7 +572,7 @@ def empty_site_candidates(atoms, spacegroup, n_grid=24, min_dist=1.0,
                                            for q in picked):
                 picked.append(m)
 
-    from .salc import site_group
+    from swan.symmetry import site_group
     out = []
     seen = []
     for p in picked:
@@ -834,7 +834,7 @@ def amn_projection_method(
     assert out_win[0] < frozen_win[0] and frozen_win[1] < out_win[1]
 
     # ---- expand orbits to the [(iatom, (n, l_str))] contract
-    from .projectability.sphere_projectability import bound_channels, equivalent_atoms
+    from ..projectability.sphere_projectability import bound_channels, equivalent_atoms
     eq = equivalent_atoms(calc.atoms, symprec)
     selected_orbitals, extra = [], []
     for key in sorted(chosen, key=str):

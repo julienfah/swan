@@ -31,7 +31,7 @@ from swan.symmetry import (NAME_OF, build_at, describe_orbital,
                            isotypic_components, parse_position, parse_shells,
                            register, shell_rep, site_group)
 from swan.projectability.amn_projectability import orbital_window_fraction, true_overlap
-from swan.candidate_scan import _stack_payload
+from swan.ebr.candidate_scan import _stack_payload
 from swan.ebr.ebr_select import (dedupe_combinations, rank_combinations,
                               score_combinations)
 from swan.ebr.ebr_log import write_selection_log
