@@ -1,7 +1,5 @@
-from ase import Atoms
 from ase.build import bulk
 from ase.io import write
-import numpy as np
 
 
 Si = bulk('Si', 'diamond', a=5.43)          # works well, but squeezing the outer wdw with zhang algo made it slightly worse (see the two png)
@@ -15,9 +13,10 @@ tungsten = bulk('W', 'bcc', a=3.16)         # broken, more bands in frozen windo
 Vanadium = bulk('V', 'bcc', a=3.03)         # broken, requires 1/2 translation but real grid from GPAW is odd, should be adaptative?
 Ga = bulk('Ga', 'orthorhombic', a=4.51, b=4.52, c=7.66)
 ke  = bulk('K',  'bcc', a=5.23)             # fails, frozen window is bigger than outer !!! -> need to get the E_min close to Ef, not at the bottom of the bands
+li = bulk('Li', 'bcc', a=3.44)
+zns = bulk('ZnS', 'zincblende', a=5.41)
 
-
-tests= [Ga,ke]
+tests= [ zns]
 
 for test in tests:
     write(f"{test.get_chemical_formula()}.cif", test)

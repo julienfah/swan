@@ -14,7 +14,13 @@ wheels/
 *.chk
 *.txt
 *.gpw
+*.xsf
 
 #log files
 *.log
 logs/
+#MolSym local cloned package
+MolSym/
+#additional tests
+test_*/
+test-*/

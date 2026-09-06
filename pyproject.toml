@@ -1,27 +1,81 @@
 [project]
-name = "pawan"
+name = "swan"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ase>=3.29.0",
-    "gpaw>=25.7.0",
     "irrep>=2.6.3",
+    "gpaw==25.7.0",#uv pip install "gpaw==25.7.0" --no-cache-dir
+    "molsym[qcel]",
+    "mp-api>=0.46.4",
+    "mpi4py>=4.1.2",
     "numba>=0.65.1",
     "numpy>=2.4.6",
     "pyfftw>=0.15.1",
+    "pyxtal>=1.1.1",
     "ray>=2.55.1",
     "spglib>=2.7.0",
-    "wannierberri>=26.4.6",
+    "wannierberri",
+    "spgrep>=0.6.0",
+    "pytest>=9.1.1",
 ]
 
 [project.scripts]
-pawan = "pawan.main:main"  # exposes a CLI entry point
+swan = "swan.main:main"  # exposes a CLI entry point
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pawan"]
+packages = ["src/swan"]
+
+[dependency-groups]
+dev = [
+    "autopep8>=2.3.2",
+    "flake8>=7.3.0",
+]
+
+[tool.ruff]
+# Maximum line length 
+line-length = 120
+
+# Excluded directories and files 
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "__init__.py",
+    ".eggs",
+    "*.egg",
+]
+
+[tool.ruff.lint]
+# Enable default pycodestyle (E/W) and Pyflakes (F) rules to match Flake8
+select = ["E", "W", "F"]
+
+# Ignored rules (equivalent to ignore)
+ignore = [
+    "E266", # too many leading '#' for block comment
+    "E731", # do not assign a lambda expression, use a def
+    "E721", # do not compare types
+    "E272", # multiple spaces before keyword
+    "W605", # invalid escape sequence - does not allow to use LaTeX
+]
+
+# Per-file rule ignores (equivalent to per-file-ignores)
+[tool.ruff.lint.per-file-ignores]
+"conftest.py" = ["F401"] # unused imports allowed in conftest.py
+
+[tool.uv.workspace]
+members = [
+    "MolSym",
+]
+
+[tool.uv.sources]
+molsym = { workspace = true }
+wannierberri = { git = "https://github.com/wannier-berri/wannier-berri.git" }
+irrep = { git = "https://github.com/irreducible-representations/irrep.git"}
