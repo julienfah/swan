@@ -59,6 +59,7 @@ If you have an MPI-enabled installation of GPAW (to check : ```gpaw info```), yo
 Outputs: logs and output files, including a plot of the bands appear in ```test/<chemical formula>```
 
 See ```tutorial.ipynb``` for a more detailed description of the use of the code.
+A few successful examples can be seen in ```test```, where different materials are stored with input files and png result.
 
 ## Limitations
 
