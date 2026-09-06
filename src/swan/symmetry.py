@@ -51,7 +51,6 @@ from wannierberri.symmetry import orbitals as wb_orb
 
 from .projectability.sphere_projectability import (
     bound_channels,
-    collect_projections,
     describe_metric,
 )
 

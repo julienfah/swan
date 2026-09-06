@@ -370,7 +370,7 @@ def rank_combinations(scored, cond_min=1e-3, min_gain=0.02, rel_gain=0.15,
         if n_dep:
             print(f"  {n_dep} combination(s) rejected as linearly dependent "
                   f"(min normalised overlap eigenvalue < {cond_min})")
-        print(f"  Pareto front (best coverage at each size):")
+        print("  Pareto front (best coverage at each size):")
         for t in front:
             mark = "  <- selected" if t is chosen else ""
             print(f"    {t[2]:>4} WF   coverage {t[1]:.4f}{mark}")

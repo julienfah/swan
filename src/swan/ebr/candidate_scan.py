@@ -530,7 +530,6 @@ def empty_site_candidates(atoms, spacegroup, n_grid=24, min_dist=1.0,
 
     Returns [(frac_position, |G_q|, distance_to_nearest_atom), ...].
     """
-    import spglib
 
     cell = (np.array(atoms.cell[:]), atoms.get_scaled_positions(),
             atoms.get_atomic_numbers())
@@ -588,7 +587,7 @@ def empty_site_candidates(atoms, spacegroup, n_grid=24, min_dist=1.0,
     out = out[:max_sites]
 
     if verbose:
-        print(f"  empty-site candidates (ranked by site symmetry):")
+        print("  empty-site candidates (ranked by site symmetry):")
         for q, n, dist in out:
             print(f"    {np.round(q, 4)}   |G_q| = {n:3d}   "
                   f"{dist:.2f} A from the nearest atom")

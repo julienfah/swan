@@ -438,7 +438,7 @@ def parse_args():
         action="store_true",
         default=None,
         dest="pdos",
-        help="Compute projected density of states (PDOS) after Wannierization (default:False)",   
+        help="Compute projected density of states (PDOS) after Wannierization (default:False)",
     )
     parser.add_argument(
         "--verbose",

@@ -9,12 +9,10 @@ from wannierberri.symmetry.projections import Projection, ProjectionsSet
 from ase.dft.bandgap import bandgap
 from gpaw.mpi import serial_comm, world
 
-from swan.symmetry import build,describe_orbital,projectability_from_gpaw,site_group
+from swan.symmetry import build,describe_orbital
 from swan.extend_proj_set import extend_to_energy_window
 from swan.utils.utils import safety_check_windows
 #from swan.candidate_scan import candidate_scan, amn_projection_method
-from swan.projectability.zhang_amn import Zhang_projection_method_amn
-from wannierberri.w90files import WannierData
 
 def get_proj_set(
     calc = None,
@@ -173,7 +171,7 @@ def Zhang_projection_method(
                         f"Rejected orbital: Atom {iatom}, n={n}, l={l_str}, integrated pDOS={integrated:.3f} <= alpha={alpha[l_str]:.3f}\n\n"
                     )
         return selected_orbitals, nwann
-    
+
     alpha = alpha_initial
     alpha_increments = {
         l: (alpha_max[l] - alpha_initial[l]) / 10.0 for l in l_conversion.values()

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import traceback
 from pathlib import Path
-from gpaw.mpi import world, serial_comm
+from gpaw.mpi import serial_comm
 
 import numpy as np
 

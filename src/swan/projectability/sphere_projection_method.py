@@ -69,7 +69,6 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-from ase.dft.bandgap import bandgap
 from gpaw import GPAW
 from gpaw.mpi import serial_comm, world
 
