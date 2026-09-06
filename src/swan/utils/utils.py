@@ -468,4 +468,11 @@ def parse_args():
         dest="EBR_margin",
         help="Margin for validation : max number of wannier functions in the considered projection sets is margin*number of bands in the frozen window (default: 2.0)",
     )
+    parser.add_argument(
+        "--create-xsf",
+        action="store_true",
+        default=None,
+        dest="create_xsf",
+        help="Create XSF files for visualizing Wannier functions in VESTA (default: False)",
+    )
     return parser.parse_args()

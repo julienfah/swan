@@ -23,6 +23,7 @@ def wannierize(
         localise=True,
     ),
     recompute_files=True,
+    create_xsf=False,
     ecut_pw=500,
     comm=serial_comm,
 ):
@@ -36,6 +37,9 @@ def wannierize(
     if calc_nscf_irred is None:
         calc_nscf_irred = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     all_files_exist = all((Path_(out_dir) / Path_(f"{seed}/{seed}_wannier_data.{ext}.npz")).exists() for ext in ["amn", "mmn", "eig", "sawf"])
+    files = ["amn", "mmn", "eig", "symmetrizer"]#, "unk"]
+    if create_xsf:
+        files.append("unk")
     if recompute_files or not all_files_exist:
         #should recompute amn always, others never
         print(f"Computing wannierization files for {seed}...")
@@ -45,7 +49,7 @@ def wannierize(
             projections=proj_set,
             irreducible=True,
             ecut_pw=ecut_pw,
-            files=["amn", "mmn", "eig", "symmetrizer"],#, "unk"],
+            files=files,
             unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
             unitary_params=unitary_params,
             return_bandstructure=True,
@@ -55,7 +59,7 @@ def wannierize(
         print(f"Loading wannierization files for {seed}...")
         wandata = WannierData.from_npz(
             seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
-            files=["mmn", "eig", "chk", "symmetrizer"],
+            files=files,
             ignore_missing_files=False,
             irreducible=True,
         )
@@ -80,11 +84,13 @@ def wannierize(
         **wannierization_params,
     )
     wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
+    #xsf to visualize the wannier functions in VESTA
+    if create_xsf:
+        plot_wannier(
+            seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
+            reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
+        )
     # log spreads
-    """plot_wannier(
-        seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
-        reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
-    )"""
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
             f.write(f"Center: {center}, Spread: {spread}\n")
