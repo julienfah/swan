@@ -85,7 +85,7 @@ def auto_workflow(
     alphabet="shells+hyb",
     validate_n_max=5,
     EBR_margin=2,
-    create_xsf=False,
+    create_xsf=False,output_Ham_R=False,add_SOC=False,
     verbose=False
 ):
     n_bands = adaptative_nscf_nbands(
@@ -165,9 +165,11 @@ def auto_workflow(
                     wannierization_params=wannierization_params,
                     ecut_pw=ecut,
                     create_xsf=create_xsf,
+                    #new
+                    get_Ham_R=output_Ham_R,soc=add_SOC
                 )
 
-            bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints)
+            bands_wannier, wb_path = interpolate_bands(seed=seed, out_dir=out_dir, in_dir=in_dir, npoints=npoints,soc=add_SOC)
 
             plot_bands(bands_wannier, wb_path, outer_win, frozen_win, seed=seed, out_dir=out_dir, in_dir=in_dir)
 

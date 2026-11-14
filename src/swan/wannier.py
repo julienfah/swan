@@ -41,15 +41,18 @@ def wannierize(
         calc_nscf_irred = GPAW(f"{in_dir}/{seed}/{seed}-nscf-irred.gpw", txt=None, communicator=comm)
     all_files_exist = all((Path_(out_dir) / Path_(f"{seed}/{seed}_wannier_data.{ext}.npz")).exists() for ext in ["amn", "mmn", "eig", "sawf"])
     files = ["amn", "mmn", "eig", "symmetrizer"]#, "unk"]
+    if soc:
+        files.append("soc")
     if create_xsf:
         files.append("unk")
     if recompute_files or not all_files_exist:
         #should recompute amn always, others never
         print(f"Computing wannierization files for {seed}...")
         if soc:
+            print('SOC CALC')
             wandata, bandstructure = WannierDataSOC.from_gpaw(
                 calculator=calc_nscf_irred,
-                spin_channel=spin_channel,
+              #  spin_channel=spin_channel,
                 projections=proj_set,
                 irreducible=True,
                 ecut_pw=ecut_pw,
@@ -75,6 +78,7 @@ def wannierize(
     else:
         print(f"Loading wannierization files for {seed}...")
         if soc:
+            print('SOC CALC')
             wandata = WannierDataSOC.from_npz(
                 seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
                 files=files,
@@ -87,7 +91,7 @@ def wannierize(
                 calculator_gpaw=calc_nscf_irred,
                 Ecut=ecut_pw,
                 irreducible=True,
-                spin_channel=spin_channel,
+               # spin_channel=spin_channel,
                 include_TR=True,
             )
             wandata.set_projections(projections=proj_set,bandstructure=bs)
@@ -119,8 +123,23 @@ def wannierize(
         savechk=False,
         **wannierization_params,
     )
-    wandata.chk.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data.chk.npz")
-    #xsf to visualize the wannier functions in VESTA
+
+    seedname = f"{out_dir}/{seed}/{seed}_wannier_data"
+
+    if soc:
+        wandata.data_up.chk.to_npz(
+            f"{seedname}-spin-0.chk.npz"
+        )
+
+        if wandata.data_down is not None:
+            wandata.data_down.chk.to_npz(
+                f"{seedname}-spin-1.chk.npz"
+            )
+    else:
+        wandata.chk.to_npz(
+            f"{seedname}.chk.npz"
+        )
+
     if create_xsf:
         plot_wannier(
             seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
@@ -129,15 +148,34 @@ def wannierize(
     if get_Ham_R:
         if soc:
             system_ = SystemSOC.from_wannierdata(wandata=wandata)
-            system=SystemSOC.get_system_R(system)
+            system=SystemSOC.get_system_R(system_)
             system.to_hr_file(seedname=f"{seed}")
         else:
             system = System_R.from_wannierdata(wandata=wandata)
             system.write_hr_file(seedname=f"{seed}")
     # log spreads
-    with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
-        for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):
-            f.write(f"Center: {center}, Spread: {spread}\n")
+    if soc:
+        datasets = [("up", wandata.data_up)]
+
+        if wandata.data_down is not None:
+            datasets.append(("down", wandata.data_down))
+    else:
+        datasets = [("scalar", wandata)]
+
+    with open(
+        f"{out_dir}/{seed}/{seed}_wannier_spreads.txt",
+        "w"
+    ) as f:
+        for spin_label, data in datasets:
+            f.write(f"\n### {spin_label} ###\n")
+
+            centers = data.chk.wannier_centers_cart
+            spreads = data.chk.wannier_spreads
+
+            for center, spread in zip(centers, spreads):
+                f.write(
+                    f"Center: {center}, Spread: {spread}\n"
+                )
 
 def index_to_label(labels, points, atol=1e-2):
     """labels: {label: pos_array} (subset), points: full list of positions.
@@ -149,7 +187,7 @@ def index_to_label(labels, points, atol=1e-2):
             if np.allclose(pos, p, atol=atol):
                 result[i] = label
     return dict(sorted(result.items()))
-def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm):
+def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=None, npoints=200, comm=serial_comm,soc=False):
     """
     Use of the Wannier functions to interpolate the bands.
     """
@@ -160,14 +198,27 @@ def interpolate_bands(seed, out_dir, in_dir, calc_nscf_irred=None,wannier_data=N
     path = atoms.cell.bandpath(npoints=npoints)
     kpts = path.kpts
     if wannier_data is None:
-        wannier_data = WannierData.from_npz(
-            seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
-            files=["amn", "mmn", "eig", "chk", "symmetrizer"],
-            ignore_missing_files=False,
-            irreducible=True,
-    )
+        if soc:
+            wannier_data = WannierDataSOC.from_npz(
+                seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
+                files=["amn", "mmn", "eig", "chk", "symmetrizer","soc"],
+                #ignore_missing_files=False,
+                irreducible=True,nspin=1
+            )
+        else:
+            wannier_data = WannierData.from_npz(
+                seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
+                files=["amn", "mmn", "eig", "chk", "symmetrizer"],
+                ignore_missing_files=False,
+                irreducible=True,
+        )
     wandata = wannier_data
-    system = System_R.from_wannierdata(wandata=wandata, berry=True)
+    if soc:
+        print('PASSED HERE SOC CALCULATION YES')
+        system_soc = SystemSOC.from_wannierdata(wandata=wandata)
+        system=system_soc.get_system_R()
+    else:    
+        system = System_R.from_wannierdata(wandata=wandata, berry=True)
 
     kpoints = path.special_points  # dict of label: kcoords
     wb_labels = index_to_label(kpoints, kpts, atol=1e-6)
