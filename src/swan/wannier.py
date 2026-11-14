@@ -1,6 +1,8 @@
 from gpaw import GPAW
 from wannierberri.w90files import WannierData
 from wannierberri import System_R, Path, evaluate_k_path
+from wannierberri.w90files.wandata_soc import WannierDataSOC
+from wannierberri.system.system_soc import SystemSOC
 from gpaw.mpi import serial_comm
 from pathlib import Path as Path_ # avoid name conflict with wannierberri.grid.Path
 import numpy as np
@@ -26,6 +28,7 @@ def wannierize(
     create_xsf=False,
     ecut_pw=500,
     comm=serial_comm,
+    get_Ham_R=False,soc=False
 ):
     """
     Proper wannierization of the system, using the previously determined parameters.
@@ -43,37 +46,70 @@ def wannierize(
     if recompute_files or not all_files_exist:
         #should recompute amn always, others never
         print(f"Computing wannierization files for {seed}...")
-        wandata, bandstructure = WannierData.from_gpaw(
-            calculator=calc_nscf_irred,
-            spin_channel=spin_channel,
-            projections=proj_set,
-            irreducible=True,
-            ecut_pw=ecut_pw,
-            files=files,
-            unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
-            unitary_params=unitary_params,
-            return_bandstructure=True,
-        )
-        wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
+        if soc:
+            wandata, bandstructure = WannierDataSOC.from_gpaw(
+                calculator=calc_nscf_irred,
+                spin_channel=spin_channel,
+                projections=proj_set,
+                irreducible=True,
+                ecut_pw=ecut_pw,
+                files=files,
+                unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
+                unitary_params=unitary_params,
+                return_bandstructure=True,
+            )
+            wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
+        else:
+            wandata, bandstructure = WannierData.from_gpaw(
+                calculator=calc_nscf_irred,
+                spin_channel=spin_channel,
+                projections=proj_set,
+                irreducible=True,
+                ecut_pw=ecut_pw,
+                files=files,
+                unk_grid=tuple(calc_nscf_irred.wfs.gd.N_c),
+                unitary_params=unitary_params,
+                return_bandstructure=True,
+            )
+            wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
     else:
         print(f"Loading wannierization files for {seed}...")
-        wandata = WannierData.from_npz(
-            seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
-            files=files,
-            ignore_missing_files=False,
-            irreducible=True,
-        )
-        from irrep.bandstructure import BandStructure
+        if soc:
+            wandata = WannierDataSOC.from_npz(
+                seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
+                files=files,
+                ignore_missing_files=False,
+                irreducible=True,
+            )
+            from irrep.bandstructure import BandStructure
+    
+            bs = BandStructure.from_gpaw(
+                calculator_gpaw=calc_nscf_irred,
+                Ecut=ecut_pw,
+                irreducible=True,
+                spin_channel=spin_channel,
+                include_TR=True,
+            )
+            wandata.set_projections(projections=proj_set,bandstructure=bs)
+            wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
+        else:
+            wandata = WannierData.from_npz(
+                seedname=f"{out_dir}/{seed}/{seed}_wannier_data",
+                files=files,
+                ignore_missing_files=False,
+                irreducible=True,
+            )
+            from irrep.bandstructure import BandStructure
 
-        bs = BandStructure.from_gpaw(
-            calculator_gpaw=calc_nscf_irred,
-            Ecut=ecut_pw,
-            irreducible=True,
-            spin_channel=spin_channel,
-            include_TR=True,
-        )
-        wandata.set_projections(projections=proj_set,bandstructure=bs)
-        wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
+            bs = BandStructure.from_gpaw(
+                calculator_gpaw=calc_nscf_irred,
+                Ecut=ecut_pw,
+                irreducible=True,
+                spin_channel=spin_channel,
+                include_TR=True,
+            )
+            wandata.set_projections(projections=proj_set,bandstructure=bs)
+            wandata.to_npz(f"{out_dir}/{seed}/{seed}_wannier_data")
 
     wandata.wannierise(
         froz_min=frozen_win[0],
@@ -90,6 +126,14 @@ def wannierize(
             seed, out_dir, sc=(0, 0), select_WF=[i for i in range(proj_set.num_wann)],
             reduce_r_points=1, wannier_data=wandata,atoms=calc_nscf_irred.atoms
         )
+    if get_Ham_R:
+        if soc:
+            system_ = SystemSOC.from_wannierdata(wandata=wandata)
+            system=SystemSOC.get_system_R(system)
+            system.to_hr_file(seedname=f"{seed}")
+        else:
+            system = System_R.from_wannierdata(wandata=wandata)
+            system.write_hr_file(seedname=f"{seed}")
     # log spreads
     with open(f"{out_dir}/{seed}/{seed}_wannier_spreads.txt", "w") as f:
         for center, spread in zip(wandata.chk.wannier_centers_cart, wandata.chk.wannier_spreads):

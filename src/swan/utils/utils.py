@@ -475,4 +475,18 @@ def parse_args():
         dest="create_xsf",
         help="Create XSF files for visualizing Wannier functions in VESTA (default: False)",
     )
+    parser.add_argument(
+        "--add-soc",
+        type=bool,
+        default=False,
+        dest="add_SOC",
+        help="Activate GPAW not scf spin orbit coupling",
+    )
+    parser.add_argument(
+        "--write-final-Ham",
+        type=bool,
+        default=False,
+        dest="output_Ham_R",
+        help="Write out the seedname_hr.dat for future use in Wannier Berri",
+    )
     return parser.parse_args()
